@@ -85,6 +85,9 @@
   .cbtn .num { font-size: 11px; opacity: .6; font-weight: 600; }
   .cbtn.active { border-color: #7fe36a; background: rgba(127,227,106,.16); color: #b7f5a8; box-shadow: 0 0 0 3px rgba(127,227,106,.12); }
   .cbtn.locked { opacity: .42; cursor: not-allowed; }
+  .cbtn.buyable { border-color: #7fe36a; background: rgba(127,227,106,.1); color: #d7ffcc; }
+  .cbtn.buyable .num { color: #7fe36a; opacity: 1; font-weight: 800; }
+  #p-coins { color: #ffd27f; font-weight: 800; }
   #char-desc { margin-top: 8px; font-size: 12.5px; opacity: .75; min-height: 18px; }
   #btn-play {
     margin-top: 14px; font-size: 20px; font-weight: 900; padding: 15px 52px; border-radius: 12px; cursor: pointer;
@@ -125,7 +128,9 @@
     <span>·</span>
     <span id="p-diff">⚽ 普通</span>
     <span>·</span>
-    <span id="p-player">梅西</span>
+    <span id="p-player">梅西 10</span>
+    <span>·</span>
+    <span id="p-coins">💰 0</span>
   </div>
   <div id="p-msg">拖曳瞄準，放開射門！</div>
 </div>
@@ -148,11 +153,12 @@
     </div>
     <p id="diff-desc">守門員會猜方向，踢角落比較容易進，一直踢中路會被撲</p>
 
-    <p class="diff-title">選擇球員</p>
+    <p class="diff-title">選擇球員（用錢買）</p>
     <div id="char-row"></div>
-    <p id="char-desc">梅西 · 10 號　（贏一場就能解鎖下一位超級巨星）</p>
+    <p id="char-desc">💰 你有 0 元　·　目前球員：梅西 10 號</p>
 
     <button id="btn-play">開始踢球</button>
+    <p class="tip">每進一球賺 100 元、完成一輪再 +50 元（難度越高錢越多）· 錢可以買新的超級巨星</p>
     <p class="tip">🖱 電腦：移動滑鼠瞄準、點一下射門　📱 iPad：拖曳瞄準、放開射門（或按右下「射門」）</p>
     <p class="ver" id="ver-line">v1.0</p>
   </div>
@@ -164,7 +170,7 @@
     <h2 id="pover-title">⚽ 比賽結束</h2>
     <div class="score-line" id="pover-score">5 球進了 <b>0</b> 球</div>
     <button id="btn-again">🔁 再來一次</button>
-    <button id="btn-change-diff" class="ghost">🎚 換難度</button>
+    <button id="btn-change-diff" class="ghost">🛒 買球員 / 換難度</button>
   </div>
 </div>
 

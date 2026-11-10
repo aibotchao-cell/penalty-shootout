@@ -33,18 +33,23 @@ const DIFF = {
     desc: '守門員反應很快、判斷很準，要踢到很角落才有機會' },
 };
 
-// --------------------------- 超級巨星 --------------------------------------
+// --------------------------- 超級巨星（用錢買）-----------------------------
 const PLAYERS = [
-  { id: 'messi', name: '梅西', num: 10, kit: 0x9dc0e8, kit2: 0xffffff, shorts: 0x15161c, hair: 0x2a1a12, skin: 0xe0a878 },
-  { id: 'ronaldo', name: 'C羅', num: 7, kit: 0xa41d2a, kit2: 0x125c33, shorts: 0x125c33, hair: 0x1a1210, skin: 0xeab98f },
-  { id: 'mbappe', name: '姆巴佩', num: 10, kit: 0x1b3f8b, kit2: 0xffffff, shorts: 0x1b3f8b, hair: 0x14100e, skin: 0x8a5a3b },
-  { id: 'neymar', name: '內馬爾', num: 10, kit: 0xf2d200, kit2: 0x1f7a3a, shorts: 0x1f7a3a, hair: 0x5a3a1a, skin: 0xd9a06a },
-  { id: 'haaland', name: '哈蘭德', num: 9, kit: 0x6cabdd, kit2: 0xffffff, shorts: 0xffffff, hair: 0xd9c27a, skin: 0xf3cda6 },
+  { id: 'messi', name: '梅西', num: 10, price: 0, kit: 0x9dc0e8, kit2: 0xffffff, shorts: 0x15161c, hair: 0x2a1a12, skin: 0xe0a878 },
+  { id: 'ronaldo', name: 'C羅', num: 7, price: 500, kit: 0xa41d2a, kit2: 0x125c33, shorts: 0x125c33, hair: 0x1a1210, skin: 0xeab98f },
+  { id: 'mbappe', name: '姆巴佩', num: 10, price: 900, kit: 0x1b3f8b, kit2: 0xffffff, shorts: 0x1b3f8b, hair: 0x14100e, skin: 0x8a5a3b },
+  { id: 'neymar', name: '內馬爾', num: 10, price: 1400, kit: 0xf2d200, kit2: 0x1f7a3a, shorts: 0x1f7a3a, hair: 0x5a3a1a, skin: 0xd9a06a },
+  { id: 'haaland', name: '哈蘭德', num: 9, price: 2000, kit: 0x6cabdd, kit2: 0xffffff, shorts: 0xffffff, hair: 0xd9c27a, skin: 0xf3cda6 },
 ];
+
+// 賺錢規則：每進一球 +100 元、完成一輪 +50 元、難度加倍（簡單 ×1／普通 ×1.5／困難 ×2）
+const COIN_PER_GOAL = 100;
+const COIN_FINISH = 50;
+const COIN_MULT = { easy: 1, normal: 1.5, hard: 2 };
 
 // --------------------------- 存檔 ------------------------------------------
 const SAVE_KEY = 'ls_penalty_save_v1';
-const save = { unlocked: ['messi'], current: 'messi', best: 0 };
+const save = { unlocked: ['messi'], current: 'messi', best: 0, coins: 0 };
 try {
   const raw = localStorage.getItem(SAVE_KEY);
   if (raw) Object.assign(save, JSON.parse(raw));
@@ -157,25 +162,9 @@ keeper.position.copy(KEEPER_HOME);
 keeper.scale.setScalar(1.28);
 scene.add(keeper);
 
-// 玩家（踢球的球員）— 一開始是梅西
-const KICKER_HOME = new THREE.Vector3(10.6, 1.0, 19.75);
-const kicker = new THREE.Group();
-kicker.position.copy(KICKER_HOME);
-kicker.scale.setScalar(1.12);
-scene.add(kicker);
-
+// 玩家只顯示在 HUD（不站在場上擋畫面）
 function applyPlayer() {
-  while (kicker.children.length) {
-    const c = kicker.children.pop();
-    kicker.remove(c);
-    c.traverse?.((n) => { if (n.material) n.material.dispose?.(); if (n.geometry) n.geometry.dispose?.(); });
-  }
   const p = PLAYERS.find((x) => x.id === save.current) || PLAYERS[0];
-  const fig = makeFigure({
-    kit: p.kit, kit2: p.kit2, shorts: p.shorts, hair: p.hair, skin: p.skin, gloves: false,
-  });
-  fig.rotation.y = -Math.PI / 2 + 0.35;          // 面向球門（-X）稍微側身
-  kicker.add(fig);
   el('p-player').textContent = `${p.name} ${p.num}`;
 }
 
@@ -222,6 +211,7 @@ function updateHud() {
   el('p-goals').textContent = `進球 ${state.goals}`;
   el('p-best').textContent = `最高 ${save.best}`;
   el('p-diff').textContent = `${d.icon} ${d.name}`;
+  el('p-coins').textContent = `💰 ${save.coins}`;
 }
 function msg(text, cls = '') {
   const m = el('p-msg');
@@ -283,15 +273,27 @@ function renderChars(note = '') {
   const row = el('char-row');
   row.innerHTML = '';
   PLAYERS.forEach((p) => {
-    const locked = !save.unlocked.includes(p.id);
+    const owned = save.unlocked.includes(p.id);
+    const affordable = save.coins >= p.price;
     const b = document.createElement('button');
-    b.className = 'cbtn' + (locked ? ' locked' : '') + (p.id === save.current && !locked ? ' active' : '');
-    b.innerHTML = locked
-      ? '🔒<span class="num">贏一場解鎖</span>'
-      : `${p.name}<span class="num">${p.num} 號</span>`;
+    b.className = 'cbtn'
+      + (owned ? (p.id === save.current ? ' active' : '') : (affordable ? ' buyable' : ' locked'));
+    b.innerHTML = owned
+      ? `${p.name}<span class="num">${p.num} 號</span>`
+      : `${p.name}<span class="num">💰 ${p.price}</span>`;
     b.addEventListener('click', () => {
-      if (locked) {
-        el('char-desc').textContent = `${p.name} 還沒解鎖 —— 贏一場（進 ${WIN_GOALS} 球以上）就能解鎖！`;
+      if (!owned) {
+        if (affordable) {
+          save.coins -= p.price;
+          save.unlocked.push(p.id);
+          save.current = p.id;
+          persist();
+          applyPlayer();
+          renderChars(`🎉 買到 ${p.name} 了！剩下的錢：${save.coins} 元`);
+        } else {
+          el('char-desc').textContent =
+            `${p.name} 需要 ${p.price} 元 —— 你還差 ${p.price - save.coins} 元（多踢幾輪賺錢！）`;
+        }
         return;
       }
       save.current = p.id;
@@ -302,9 +304,8 @@ function renderChars(note = '') {
     row.appendChild(b);
   });
   const cur = PLAYERS.find((x) => x.id === save.current) || PLAYERS[0];
-  const allDone = save.unlocked.length >= PLAYERS.length;
-  el('char-desc').textContent = note || `${cur.name} · ${cur.num} 號　${
-    allDone ? '（全部球員都解鎖了！）' : `（贏一場就能解鎖下一位超級巨星 ${save.unlocked.length}/${PLAYERS.length}）`}`;
+  el('char-desc').textContent = note || `💰 你有 ${save.coins} 元　·　目前球員：${cur.name} ${cur.num} 號`;
+  el('p-coins').textContent = `💰 ${save.coins}`;
 }
 
 el('btn-play').addEventListener('click', () => {
@@ -379,12 +380,11 @@ function resolveShot() {
 function nextShot() {
   if (state.shot >= TOTAL_SHOTS) {
     state.phase = 'done';
-    const won = state.goals >= WIN_GOALS;
-    let newUnlock = null;
-    if (won) {
-      const next = PLAYERS.find((p) => !save.unlocked.includes(p.id));
-      if (next) { save.unlocked.push(next.id); newUnlock = next; }
-    }
+
+    // 💰 賺錢：每進一球 +100 元、完成一輪 +50 元，難度加倍
+    const mult = COIN_MULT[state.diff] || 1;
+    const earned = Math.round((state.goals * COIN_PER_GOAL + COIN_FINISH) * mult);
+    save.coins += earned;
     if (state.goals > save.best) save.best = state.goals;
     persist();
     try { localStorage.setItem('ls_penalty_best', String(save.best)); } catch (e) { /* 忽略 */ }
@@ -393,16 +393,19 @@ function nextShot() {
     const d = DIFF[state.diff];
     const cur = PLAYERS.find((p) => p.id === save.current);
     const title = state.goals === TOTAL_SHOTS ? '🏆 五球全進！太神了！'
-      : state.goals >= WIN_GOALS ? '🔥 贏了！太厲害了！'
+      : state.goals >= WIN_GOALS ? '🔥 太厲害了！'
         : state.goals >= 3 ? '👏 表現不錯！'
           : '💪 再練一下就會更準！';
+    const canBuy = PLAYERS.some((p) => !save.unlocked.includes(p.id) && p.price <= save.coins);
+    const nextTarget = PLAYERS.find((p) => !save.unlocked.includes(p.id));
     el('pover-title').textContent = title;
     el('pover-score').innerHTML =
       `${cur.name} ${cur.num} 號 · ${d.icon} ${d.name}難度<br>5 球進了 <b>${state.goals}</b> 球<br>` +
       `<span class="best">最高紀錄：${save.best} 球</span>` +
-      (newUnlock
-        ? `<br><span class="unlock">🎉 解鎖新球員：${newUnlock.name}！</span>`
-        : (won ? '<br><span class="best">所有球員都解鎖了 ✨</span>' : `<br><span class="best">進 ${WIN_GOALS} 球以上就能解鎖新球員</span>`));
+      `<br><span class="unlock">💰 這輪賺了 ${earned} 元（共 ${save.coins} 元）</span>` +
+      (canBuy
+        ? '<br><span class="best">🛒 錢夠了！可以去買新的超級巨星</span>'
+        : (nextTarget ? `<br><span class="best">再賺 ${nextTarget.price - save.coins} 元就能買 ${nextTarget.name}</span>` : '<br><span class="best">全部球員都買到了 ✨</span>'));
     el('pover').classList.remove('hidden');
     return;
   }
@@ -412,7 +415,6 @@ function nextShot() {
   keeper.position.copy(KEEPER_HOME);
   keeper.rotation.set(0, 0, 0);
   state.keeperTo.copy(KEEPER_HOME);
-  kicker.position.copy(KICKER_HOME);
   state.aim.set(GOAL_Z, 2.2);
   aimRing.position.set(AIM_RING_X, 2.2, GOAL_Z);
   aimDot.position.copy(aimRing.position);
@@ -431,7 +433,6 @@ function resetGame() {
   keeper.position.copy(KEEPER_HOME);
   keeper.rotation.set(0, 0, 0);
   state.keeperTo.copy(KEEPER_HOME);
-  kicker.position.copy(KICKER_HOME);
   state.aim.set(GOAL_Z, 2.2);
   aimRing.position.set(AIM_RING_X, 2.2, GOAL_Z);
   aimDot.position.copy(aimRing.position);
@@ -482,26 +483,10 @@ function animateKeeper(dt) {
   keeper.rotation.z = 0;
 }
 
-// 踢球動作：往前踏一步 → 回來
-function animateKicker(dt) {
-  if (state.phase === 'fly' || state.phase === 'result') {
-    state.kickT += dt;
-    const k = Math.min(1, state.kickT / 0.45);
-    const step = Math.sin(Math.min(1, k) * Math.PI) * 0.55;
-    kicker.position.x = KICKER_HOME.x - step * 0.85;
-    kicker.position.z = KICKER_HOME.z - step * 0.55;
-    kicker.rotation.x = -step * 0.2;
-  } else {
-    kicker.position.lerp(KICKER_HOME, Math.min(1, dt * 6));
-    kicker.rotation.x *= 0.85;
-  }
-}
-
 function frame() {
   const dt = Math.min(0.05, clock.getDelta());
   animateBall(dt);
   animateKeeper(dt);
-  animateKicker(dt);
   if (state.phase === 'aim') {
     aimRing.scale.setScalar(1 + Math.sin(performance.now() / 320) * 0.07);
   }
@@ -524,4 +509,4 @@ updateHud();
 frame();
 
 // 除錯／測試用
-window.__penalty = { state, ball, keeper, kicker, shoot, resetGame, DIFF, PLAYERS, save, persist, renderChars, applyPlayer, TOTAL_SHOTS };
+window.__penalty = { state, ball, keeper, shoot, resetGame, DIFF, PLAYERS, save, persist, renderChars, applyPlayer, TOTAL_SHOTS };
