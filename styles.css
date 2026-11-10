@@ -1,0 +1,468 @@
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0d0b09;
+  font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  color: #e8e2d6;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+#app { position: fixed; inset: 0; }
+canvas { display: block; position: absolute; inset: 0; }
+
+.hidden { display: none !important; }
+
+/* ---------------- HUD ---------------- */
+#hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+
+#crosshair {
+  position: absolute; left: 50%; top: 50%;
+  width: 26px; height: 26px; transform: translate(-50%, -50%);
+  opacity: .85;
+}
+#crosshair .ch-dot {
+  position: absolute; left: 50%; top: 50%;
+  width: 3px; height: 3px; background: #fff; border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+#crosshair .ch-line { position: absolute; background: rgba(255,255,255,.85); }
+#crosshair .ch-line.top    { left: 50%; top: 0;    width: 2px; height: 8px; transform: translateX(-50%); }
+#crosshair .ch-line.bottom { left: 50%; bottom: 0; width: 2px; height: 8px; transform: translateX(-50%); }
+#crosshair .ch-line.left   { top: 50%; left: 0;    height: 2px; width: 8px; transform: translateY(-50%); }
+#crosshair .ch-line.right  { top: 50%; right: 0;   height: 2px; width: 8px; transform: translateY(-50%); }
+
+#hitmarker {
+  position: absolute; left: 50%; top: 50%; width: 34px; height: 34px;
+  transform: translate(-50%,-50%) rotate(45deg) scale(.6);
+  opacity: 0; transition: opacity .06s;
+  background:
+    linear-gradient(#ff5544,#ff5544) center/2px 10px no-repeat,
+    linear-gradient(#ff5544,#ff5544) center/10px 2px no-repeat;
+}
+#hitmarker.show { opacity: 1; }
+
+#damage-vignette {
+  position: absolute; inset: 0; opacity: 0; transition: opacity .25s;
+  background: radial-gradient(ellipse at center, rgba(255,0,0,0) 40%, rgba(190,0,0,.55) 100%);
+}
+#damage-vignette.show { opacity: 1; transition: opacity .04s; }
+
+/* ---------------- SNIPER SCOPE ----------------
+   radial-gradient in vmin keeps the lens a circle on any aspect ratio;
+   the black outside stays transparent to pointer events (HUD is pointer-events:none) */
+#scope {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none; z-index: 1;
+  transition: opacity .10s linear;
+}
+#scope.show { opacity: 1; }
+#scope::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 50%,
+    rgba(120,180,180,.05) 0 25vmin,
+    rgba(0,0,0,.55) 26.2vmin,
+    rgba(0,0,0,.72) 27vmin,
+    rgba(2,3,4,.98) 31vmin);
+}
+#scope .sc-ring {
+  position: absolute; left: 50%; top: 50%; width: 52vmin; height: 52vmin;
+  margin: -26vmin 0 0 -26vmin; border-radius: 50%;
+  border: 2px solid rgba(0,0,0,.95);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), inset 0 0 34px rgba(0,0,0,.75);
+}
+#scope .sc-h, #scope .sc-v, #scope .sc-mil, #scope .sc-dot { position: absolute; }
+#scope .sc-h {
+  left: 50%; top: 50%; width: 46vmin; height: 1.6px;
+  transform: translate(-50%,-50%);
+  background: linear-gradient(90deg,
+    rgba(12,18,12,.85) 0 46%, transparent 46% 54%, rgba(12,18,12,.85) 54% 100%);
+}
+#scope .sc-v {
+  left: 50%; top: 50%; width: 1.6px; height: 46vmin;
+  transform: translate(-50%,-50%);
+  background: linear-gradient(180deg,
+    rgba(12,18,12,.85) 0 46%, transparent 46% 54%, rgba(12,18,12,.85) 54% 100%);
+}
+/* mil-dot ladder below the centre */
+#scope .sc-mil {
+  left: 50%; top: 50%; width: 9vmin; height: 20vmin;
+  transform: translateX(-50%);
+  background: repeating-linear-gradient(180deg,
+    rgba(12,18,12,.85) 0 1.4px, transparent 1.4px 4.4vmin);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0 46%, #000 46% 100%);
+  mask-image: linear-gradient(180deg, transparent 0 46%, #000 46% 100%);
+}
+#scope .sc-dot {
+  left: 50%; top: 50%; width: 4px; height: 4px; border-radius: 50%;
+  transform: translate(-50%,-50%); background: #ff5a5a;
+  box-shadow: 0 0 4px rgba(255,60,60,.9);
+}
+#scope .sc-zoom {
+  position: absolute; left: 50%; top: 26vmin; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: 1px; color: rgba(255,255,255,.75);
+  text-shadow: 0 1px 3px #000;
+}
+#hud.scoped #crosshair { display: none; }
+/* keep the readable HUD bits (stats, radar, health, ammo, hit feedback) above the scope */
+#topleft, #radar-wrap, #bottomleft, #bottomright, #msg { z-index: 2; }
+#hitmarker, #damage-vignette { z-index: 3; }
+
+#topleft { position: absolute; left: 16px; top: calc(14px + env(safe-area-inset-top)); font-size: 13px; }
+#topleft .stat { display: inline-block; margin-right: 14px; background: rgba(0,0,0,.35); padding: 4px 9px; border-radius: 6px; }
+#topleft .stat span { font-weight: 700; font-size: 16px; color: #ffd479; }
+#topleft .stat small { opacity: .75; font-size: 11px; }
+#topleft .stat.ally span { color: #6fc3ff; }
+#topleft .stat.money span { color: #7fe36a; }
+
+/* ---------------- RADAR ---------------- */
+#radar-wrap {
+  position: absolute; left: 16px; top: calc(58px + env(safe-area-inset-top));
+  pointer-events: none;
+}
+#radar {
+  display: block; border-radius: 50%;
+  box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  background: rgba(6,10,14,.35);
+}
+.radar-cap {
+  margin-top: 3px; text-align: center; font-size: 10.5px; letter-spacing: .5px;
+  opacity: .8; text-shadow: 0 1px 3px #000;
+}
+.radar-cap .dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin: 0 3px 0 8px; vertical-align: middle;
+}
+.radar-cap .dot:first-child { margin-left: 0; }
+.radar-cap .dot.red { background: #ff4b4b; }
+.radar-cap .dot.blue { background: #5cc8ff; }
+
+/* ---------------- BOSS 血條 ---------------- */
+#bossbar {
+  position: absolute; left: 50%; top: calc(58px + env(safe-area-inset-top));
+  transform: translateX(-50%); width: min(560px, 62vw);
+  text-align: center; z-index: 3;
+}
+#bossbar .bb-name {
+  font-size: 15px; font-weight: 900; letter-spacing: 2px; color: #ffd0a0;
+  text-shadow: 0 2px 8px #000, 0 0 14px rgba(255,80,40,.7); margin-bottom: 3px;
+}
+#bossbar .bb-track {
+  height: 17px; border: 2px solid rgba(255,180,140,.55); border-radius: 9px;
+  background: rgba(0,0,0,.55); overflow: hidden;
+  box-shadow: 0 3px 14px rgba(0,0,0,.6), inset 0 0 10px rgba(0,0,0,.6);
+}
+#bb-fill { height: 100%; width: 100%; transition: width .15s linear; }
+#bossbar .bb-hp { font-size: 11px; opacity: .85; margin-top: 2px; text-shadow: 0 1px 3px #000; }
+
+/* ---------------- SHOP ---------------- */
+#shop, #pause {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 5, 4, .84); padding: 16px;
+}
+.shop-panel {
+  width: 100%; max-width: 520px; max-height: 88vh; overflow: hidden;
+  background: #1c1914; border: 2px solid #3a3327; border-radius: 14px; padding: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+  display: flex; flex-direction: column;
+}
+/* 只有商品清單滾動：標題/金錢固定在上面、「繼續下一關」永遠固定在下面 */
+.shop-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -6px; padding: 0 6px;
+  touch-action: pan-y;
+  /* 底部淡出：下面還有東西可以滑，才不會看起來像被按鈕切一半 */
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 28px), rgba(0,0,0,.12) 100%);
+  mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 28px), rgba(0,0,0,.12) 100%);
+}
+.shop-panel h2 { text-align: center; font-size: 23px; color: #ffd479; letter-spacing: 2px; }
+.shop-sub { text-align: center; opacity: .62; font-size: 12.5px; margin: 6px 0 12px; }
+.shop-money { text-align: center; font-size: 16px; margin-bottom: 12px; }
+.shop-money b { color: #7fe36a; }
+.shop-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid #3a3327; border-radius: 10px;
+  margin-bottom: 8px; background: #231f18;
+}
+.shop-item .info { flex: 1; }
+.shop-item .nm { font-weight: 700; font-size: 14.5px; }
+.shop-item .ds { font-size: 12px; opacity: .68; margin-top: 2px; }
+.shop-item .buy {
+  padding: 10px 12px; border-radius: 8px; border: none; cursor: pointer;
+  font-weight: 800; font-size: 13.5px; min-width: 76px;
+  background: linear-gradient(180deg, #ffd479, #ffab2e); color: #1a1712;
+}
+.shop-item.cant { opacity: .5; }
+.shop-item.cant .buy { background: #3a352c; color: #8a8272; }
+.shop-item.gun { border-color: #6b5527; background: #2a2318; }
+.shop-item.super {
+  border-color: #a1351f; background: linear-gradient(90deg, #33150e, #241a14);
+  box-shadow: 0 0 12px rgba(255,90,40,.18) inset;
+}
+.shop-item.super .nm { color: #ffb08a; }
+#shop-boss-note {
+  margin: 0 0 12px; padding: 9px 12px; border-radius: 9px; text-align: center;
+  font-size: 13px; font-weight: 800; color: #ffd9c0;
+  background: linear-gradient(90deg, rgba(190,40,20,.55), rgba(120,20,10,.45));
+  border: 1px solid rgba(255,120,80,.55);
+  animation: bosspulse 1.4s ease-in-out infinite;
+}
+@keyframes bosspulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(255,90,40,0); }
+  50% { box-shadow: 0 0 16px rgba(255,90,40,.45); }
+}
+.shop-item .info .tag {
+  display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 6px;
+  border-radius: 5px; margin-left: 6px; vertical-align: middle;
+  background: #7fe36a; color: #10250f;
+}
+.shop-item.owned { opacity: .78; }
+.shop-item.owned .buy { background: #2f4a2c; color: #b9f0a8; }
+.shop-sec {
+  margin: 14px 0 8px; font-size: 12.5px; font-weight: 800; letter-spacing: 1px;
+  color: #ffd479; opacity: .95;
+}
+.shop-sec:first-child { margin-top: 0; }
+#btn-shop-continue, #btn-pause-resume {
+  display: block; width: 100%; margin-top: 12px; padding: 15px; flex: 0 0 auto;
+  border: none; border-radius: 10px; cursor: pointer;
+  font-size: 17px; font-weight: 800;
+  background: linear-gradient(180deg, #7fe36a, #38d15f); color: #0d1a0d;
+  box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  touch-action: manipulation;
+}
+
+/* ---- 暫停面板 ---- */
+.pause-info {
+  background: #231f18; border: 1px solid #3a3327; border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px; font-size: 13.5px; line-height: 1.75;
+}
+.pause-info b { color: #ffd479; }
+.pause-info .saved { color: #7fe36a; }
+.pbtn {
+  display: block; width: 100%; margin-top: 8px; padding: 13px; flex: 0 0 auto;
+  border: 2px solid #4a4132; border-radius: 10px; cursor: pointer;
+  font-size: 15.5px; font-weight: 800; color: #f0e6d2;
+  background: #2a251c; touch-action: manipulation;
+}
+.pbtn:active { transform: scale(.98); }
+.pbtn.danger { border-color: #7a3a2a; color: #ffbfa8; background: #2c1a14; }
+
+/* 主選單：新遊戲（幽靈按鈕）＋ 存檔資訊 */
+#btn-newgame.ghost {
+  display: block; margin: 10px auto 0; font-size: 14px; font-weight: 700;
+  padding: 10px 26px; border-radius: 10px; cursor: pointer;
+  color: #ccc0aa; background: rgba(255,255,255,.07);
+  border: 2px solid rgba(255,255,255,.18); touch-action: manipulation;
+}
+#btn-newgame.ghost:active { transform: scale(.97); }
+.panel .save-line { margin-top: 10px; font-size: 12.5px; color: #7fe36a; opacity: .9; }
+
+.shop-item .buy, #btn-start { touch-action: manipulation; }
+
+#bottomleft { position: absolute; left: 18px; bottom: calc(20px + env(safe-area-inset-bottom)); }
+.hp-wrap {
+  width: 190px; height: 22px; background: rgba(0,0,0,.45);
+  border: 2px solid rgba(255,255,255,.25); border-radius: 6px; position: relative; overflow: hidden;
+}
+
+/* 重生無敵倒數（HP 條上方）*/
+#ward {
+  display: inline-block; margin-bottom: 6px; padding: 4px 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 800; letter-spacing: .5px;
+  color: #d9f4ff; background: rgba(40,120,190,.6);
+  border: 1px solid rgba(130,225,255,.8);
+  box-shadow: 0 0 16px rgba(90,200,255,.55);
+  text-shadow: 0 1px 3px #000;
+  animation: wardpulse .9s ease-in-out infinite;
+}
+#ward b { font-size: 15px; color: #fff; }
+@keyframes wardpulse {
+  0%, 100% { opacity: .82; box-shadow: 0 0 10px rgba(90,200,255,.4); }
+  50% { opacity: 1; box-shadow: 0 0 20px rgba(120,220,255,.75); }
+}
+#hp-bar {
+  position: absolute; inset: 0; width: 100%;
+  background: linear-gradient(90deg, #38d15f, #7fe36a);
+  transition: width .18s, background .18s;
+}
+#hp-text { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 13px; font-weight: 700; text-shadow: 0 1px 2px #000; }
+
+#bottomright {
+  position: absolute; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom));
+  text-align: right; text-shadow: 0 2px 4px #000;
+}
+#weapon-name { font-size: 14px; letter-spacing: 2px; opacity: .85; }
+#ammo { font-size: 30px; font-weight: 800; line-height: 1; }
+#ammo-max { font-size: 16px; opacity: .6; }
+
+#msg {
+  position: absolute; left: 50%; top: 33%; transform: translateX(-50%);
+  font-size: 26px; font-weight: 800; text-shadow: 0 2px 8px #000; opacity: 0;
+  transition: opacity .3s; text-align: center; white-space: pre-line;
+}
+#msg.show { opacity: 1; }
+
+/* ---------------- TOUCH CONTROLS ---------------- */
+#touch { position: absolute; inset: 0; z-index: 20; }
+
+#look-zone { position: absolute; right: 0; top: 0; width: 55%; height: 100%; }
+
+#joy-base {
+  position: absolute; width: 130px; height: 130px; margin: -65px 0 0 -65px;
+  border-radius: 50%; border: 2px solid rgba(255,255,255,.35);
+  background: rgba(255,255,255,.07);
+}
+#joy-knob {
+  position: absolute; left: 50%; top: 50%; width: 58px; height: 58px;
+  margin: -29px 0 0 -29px; border-radius: 50%;
+  background: rgba(255,255,255,.45); border: 2px solid rgba(255,255,255,.6);
+}
+
+.tbtn {
+  position: absolute; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000;
+  border: 2px solid rgba(255,255,255,.4); background: rgba(255,255,255,.14);
+  backdrop-filter: blur(2px);
+}
+.tbtn.fire {
+  right: 26px; bottom: calc(120px + env(safe-area-inset-bottom));
+  width: 104px; height: 104px; font-size: 19px;
+  background: rgba(220,60,50,.32); border-color: rgba(255,120,110,.6);
+}
+.tbtn.small { width: 68px; height: 68px; font-size: 15px; }
+#btn-jump   { right: 148px; bottom: calc(64px + env(safe-area-inset-bottom)); }
+#btn-reload { right: 30px; bottom: calc(240px + env(safe-area-inset-bottom)); }
+
+/* 瞄準（狙擊槍才顯示）— tap to toggle the scope on/off */
+#btn-aim {
+  right: 150px; bottom: calc(212px + env(safe-area-inset-bottom));
+  flex-direction: column; font-size: 20px;
+}
+#btn-aim small { display: block; font-size: 10px; opacity: .9; margin-top: 1px; }
+
+/* 暫停（螢幕下方中間，兩手都按得到、不會撞到開火/跳/換彈） */
+#btn-pause {
+  left: 50%; margin-left: -30px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  width: 60px; height: 60px; flex-direction: column; font-size: 18px;
+}
+#btn-pause small { display: block; font-size: 10px; opacity: .9; margin-top: 1px; }
+#btn-aim.active {
+  background: rgba(120,220,255,.35); border-color: #7fe0ff;
+  box-shadow: 0 0 14px rgba(120,220,255,.5);
+}
+
+/* 11 slots => 3 columns x 4 rows (48px so the 4th row still clears the fire button) */
+#weapons-switch {
+  position: absolute; right: 10px; top: calc(48px + env(safe-area-inset-top));
+  display: grid; grid-template-columns: repeat(3, 48px); gap: 3px;
+}
+.wbtn {
+  position: relative;
+  width: 48px; height: 44px; border-radius: 10px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.3);
+  font-size: 15px; line-height: 1;
+}
+.wbtn small { font-size: 8px; opacity: .85; margin-top: 2px; }
+.wbtn.active { background: rgba(255,212,121,.35); border-color: #ffd479; }
+.wbtn.locked { opacity: .55; border-style: dashed; }
+.wbtn.locked small { color: #ffd479; font-weight: 800; font-size: 9.5px; opacity: 1; }
+
+/* ---------------- OVERLAY ---------------- */
+#overlay {
+  position: absolute; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, #241f18 0%, #0b0906 100%);
+  padding: 20px;
+  /* 內容比畫面高的時候要能捲動，不然最上面的標題會被切掉又拉不回來 */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+.panel { max-width: 620px; text-align: center; margin: auto; }
+.panel h1 { font-size: 42px; letter-spacing: 4px; font-weight: 900; color: #f0e6d2; }
+.panel h1 span { color: #ffb347; }
+.panel .sub { opacity: .7; margin-top: 4px; letter-spacing: 3px; }
+.howto { margin: 26px 0; text-align: left; font-size: 13.5px; line-height: 1.9; opacity: .9;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 14px 18px; }
+
+/* 主選單：操作說明收起來，讓「敵人強度 + 開始」不用捲動就看得到 */
+.howto-box { margin: 16px 0 14px; text-align: left; }
+.howto-box > summary {
+  cursor: pointer; list-style: none; display: block; text-align: center;
+  font-size: 13.5px; font-weight: 700; color: #d8cdb8;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
+  border-radius: 10px; padding: 10px 14px; touch-action: manipulation;
+}
+.howto-box > summary::-webkit-details-marker { display: none; }
+.howto-box[open] > summary { border-radius: 10px 10px 0 0; margin-bottom: -14px; }
+.howto-box .howto { margin: 22px 0 0; }
+#btn-start {
+  font-size: 20px; font-weight: 800; padding: 15px 52px; border-radius: 12px; cursor: pointer;
+  color: #1a1712; background: linear-gradient(180deg, #ffd479, #ffab2e); border: none;
+  box-shadow: 0 6px 20px rgba(255,171,46,.35);
+}
+#btn-start:active { transform: scale(.97); }
+
+/* ---- 主選單：點球大戰入口 ---- */
+#btn-penalty {
+  display: block; margin: 12px auto 0; max-width: 320px;
+  padding: 12px 18px; border-radius: 12px; cursor: pointer; text-decoration: none;
+  font-size: 17px; font-weight: 800; letter-spacing: 1px;
+  color: #eaf6ff; background: linear-gradient(180deg, #2f7fd0, #1d5590);
+  border: 2px solid rgba(160, 215, 255, .45);
+  box-shadow: 0 6px 18px rgba(29, 85, 144, .45);
+  touch-action: manipulation;
+}
+#btn-penalty small { display: block; font-size: 11.5px; font-weight: 600; opacity: .8; margin-top: 3px; letter-spacing: .5px; }
+#btn-penalty:active { transform: scale(.97); }
+.panel .tip { margin-top: 14px; font-size: 12.5px; opacity: .55; }
+.panel .ver { margin-top: 8px; font-size: 12px; letter-spacing: 1.5px; opacity: .45; }
+
+/* ---- 主選單：敵人強度選擇 ---- */
+.diff-wrap { margin: 0 0 18px; }
+.diff-title { font-size: 13px; opacity: .75; margin-bottom: 8px; letter-spacing: .5px; }
+#diff-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.dbtn {
+  flex: 1 1 0; min-width: 90px; padding: 12px 6px; border-radius: 11px; cursor: pointer;
+  border: 2px solid rgba(255,255,255,.22); background: rgba(255,255,255,.07);
+  color: #efe6d4; font-size: 15px; font-weight: 800; line-height: 1.35;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  touch-action: manipulation;
+}
+.dbtn small { font-size: 10.5px; font-weight: 600; opacity: .8; }
+.dbtn.active {
+  border-color: #ffd479; background: linear-gradient(180deg, rgba(255,212,121,.32), rgba(255,171,46,.18));
+  box-shadow: 0 0 16px rgba(255,171,46,.35); color: #fff;
+}
+.dbtn.active small { opacity: .95; }
+.diff-desc { margin-top: 9px; font-size: 12.5px; opacity: .8; min-height: 18px; }
+
+/* HUD 的難度標籤 */
+#topleft .stat.diff span { color: #ffb347; }
+
+/* ===== LS 特輯：球種卡片（主選單） ===== */
+.ball-cards { display: flex; flex-direction: column; gap: 7px; margin: 12px 0 4px; }
+.bcard { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; border-radius: 9px;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.10); font-size: 13.5px; }
+.bcard b { min-width: 108px; }
+.bcard span { opacity: .72; font-size: 12.5px; }
+
+/* ===== 球種列 + 冷卻 ===== */
+#ball-cd { width: 92px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.18); margin: 5px 0 6px auto; overflow: hidden; }
+#ball-cd-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #7bff5a, #d8ff7a); transition: width .06s linear; }
+#ball-list { display: flex; gap: 6px; justify-content: flex-end; }
+.bl { font-size: 11px; padding: 3px 7px; border-radius: 7px; background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.10); opacity: .5; }
+.bl.active { opacity: 1; background: rgba(120, 220, 90, .22); border-color: rgba(140, 255, 110, .5); }
+
+/* ===== LS 特輯：主選單隊徽 ===== */
+#logo-img { width: 138px; height: auto; display: block; margin: 0 auto 6px;
+  filter: drop-shadow(0 8px 18px rgba(0,0,0,.5)); }

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<meta name="theme-color" content="#0d0b09" />
+<title>LS 點球大戰 ⚽</title>
+<link rel="stylesheet" href="./styles.css" />
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<style>
+  html, body { background: #0d0b09; }
+  /* ---------------- HUD ---------------- */
+  #phud { position: absolute; inset: 0; pointer-events: none; z-index: 10; display: flex; flex-direction: column; align-items: center; }
+  #p-top {
+    margin-top: max(14px, env(safe-area-inset-top));
+    display: flex; gap: 10px; align-items: center; padding: 8px 14px;
+    background: rgba(14,12,9,.62); border: 1px solid rgba(255,179,71,.35);
+    border-radius: 999px; backdrop-filter: blur(6px);
+    font-size: 15px; font-weight: 700; letter-spacing: .5px; color: #f0e6d2;
+  }
+  #p-goals { color: #7fe36a; }
+  #p-best { color: #9fd0ff; font-weight: 600; font-size: 13px; }
+  #p-diff { color: #ffb347; font-weight: 800; }
+  #p-msg {
+    margin-top: 12px; padding: 8px 18px; border-radius: 999px;
+    background: rgba(14,12,9,.55); font-size: 15px; letter-spacing: .5px;
+    color: #f0e6d2; transition: color .15s, transform .15s;
+  }
+  #p-msg.goal { color: #7fe36a; font-weight: 800; transform: scale(1.08); }
+  #p-msg.save { color: #ff7b7b; font-weight: 800; transform: scale(1.08); }
+  #p-msg.shoot { color: #ffb347; font-weight: 800; }
+  #p-flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 9; }
+  #p-flash.goal { opacity: 1; background: radial-gradient(circle at 50% 45%, rgba(127,227,106,.28), transparent 65%); }
+  #p-flash.save { opacity: 1; background: radial-gradient(circle at 50% 45%, rgba(255,90,90,.22), transparent 65%); }
+
+  /* 射門按鈕 */
+  #btn-shoot {
+    position: absolute; right: max(20px, env(safe-area-inset-right)); bottom: max(26px, env(safe-area-inset-bottom));
+    z-index: 12; cursor: pointer; width: 108px; height: 108px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; flex-direction: column;
+    background: radial-gradient(circle at 35% 30%, #ffd27f, #f08a1e 70%);
+    color: #2a1a05; font-weight: 900; font-size: 19px; letter-spacing: 1px;
+    box-shadow: 0 8px 22px rgba(240,138,30,.45), inset 0 -4px 0 rgba(0,0,0,.18);
+    border: 3px solid rgba(255,255,255,.35); user-select: none; touch-action: none;
+  }
+  #btn-shoot:active { transform: scale(.94); }
+  #btn-shoot small { font-size: 11px; font-weight: 700; opacity: .75; }
+  #p-ver { position: absolute; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    z-index: 10; font-size: 11px; opacity: .38; color: #e8e2d6; letter-spacing: 1px; pointer-events: none; }
+
+  /* ---------------- 開始畫面 ---------------- */
+  #start {
+    position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    background: rgba(8,6,4,.78); backdrop-filter: blur(6px); padding: 18px;
+  }
+  #start .panel { max-width: 560px; padding: 26px 26px 22px; text-align: center;
+    background: rgba(16,13,10,.93); border: 1px solid rgba(255,179,71,.28); border-radius: 20px;
+    box-shadow: 0 22px 60px rgba(0,0,0,.6); }
+  #start .logo { width: 96px; height: 96px; object-fit: contain; margin-bottom: 6px; }
+  #start h1 { font-size: 38px; letter-spacing: 3px; font-weight: 900; color: #f0e6d2; }
+  #start h1 span { color: #ffb347; }
+  #start .sub { opacity: .7; margin-top: 4px; letter-spacing: 2px; font-size: 14px; }
+  .diff-title { margin: 18px 0 8px; font-size: 13px; opacity: .8; letter-spacing: .5px; }
+  #diff-row { display: flex; gap: 10px; justify-content: center; }
+  .dbtn {
+    flex: 1 1 0; min-width: 92px; padding: 12px 8px; border-radius: 12px; cursor: pointer;
+    border: 2px solid rgba(255,255,255,.2); background: rgba(255,255,255,.07);
+    color: #e8e2d6; font-size: 15px; font-weight: 800; letter-spacing: .5px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px; touch-action: manipulation;
+  }
+  .dbtn small { font-size: 11px; font-weight: 600; opacity: .65; }
+  .dbtn.active { border-color: #ffb347; background: rgba(255,179,71,.18); color: #ffd27f; box-shadow: 0 0 0 3px rgba(255,179,71,.14); }
+  .dbtn:active { transform: scale(.97); }
+  #diff-desc { margin-top: 10px; font-size: 12.5px; line-height: 1.6; opacity: .72; min-height: 40px; }
+  /* 球員選擇 */
+  #char-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .cbtn {
+    min-width: 84px; padding: 9px 10px; border-radius: 11px; cursor: pointer;
+    border: 2px solid rgba(255,255,255,.2); background: rgba(255,255,255,.07);
+    color: #e8e2d6; font-size: 13.5px; font-weight: 800; letter-spacing: .5px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; touch-action: manipulation;
+  }
+  .cbtn .num { font-size: 11px; opacity: .6; font-weight: 600; }
+  .cbtn.active { border-color: #7fe36a; background: rgba(127,227,106,.16); color: #b7f5a8; box-shadow: 0 0 0 3px rgba(127,227,106,.12); }
+  .cbtn.locked { opacity: .42; cursor: not-allowed; }
+  #char-desc { margin-top: 8px; font-size: 12.5px; opacity: .75; min-height: 18px; }
+  #btn-play {
+    margin-top: 14px; font-size: 20px; font-weight: 900; padding: 15px 52px; border-radius: 12px; cursor: pointer;
+    color: #1a1712; background: linear-gradient(180deg, #ffd479, #ffab2e); border: none;
+    box-shadow: 0 6px 20px rgba(255,171,46,.35); touch-action: manipulation;
+  }
+  #btn-play:active { transform: scale(.97); }
+  #start .tip { margin-top: 12px; font-size: 12.5px; opacity: .55; }
+  #start .ver { margin-top: 6px; font-size: 11.5px; letter-spacing: 1.5px; opacity: .4; }
+
+  /* ---------------- 結算 ---------------- */
+  #pover {
+    position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    background: rgba(8,6,4,.72); backdrop-filter: blur(4px); padding: 18px;
+  }
+  #pover .panel { max-width: 520px; padding: 24px 28px; text-align: center;
+    background: rgba(16,13,10,.94); border: 1px solid rgba(255,179,71,.28); border-radius: 20px;
+    box-shadow: 0 22px 60px rgba(0,0,0,.6); }
+  #pover h2 { font-size: 28px; margin-bottom: 10px; color: #ffb347; }
+  #pover .score-line { font-size: 18px; line-height: 1.8; color: #f0e6d2; }
+  #pover .score-line b { font-size: 34px; color: #7fe36a; }
+  #pover .best { font-size: 13px; color: #9fd0ff; }
+  #pover .unlock { display: inline-block; margin-top: 8px; font-size: 15.5px; font-weight: 900; color: #ffd27f; }
+  #pover button { margin-top: 12px; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="phud">
+  <div id="p-top">
+    <span id="p-shot">第 1 / 5 球</span>
+    <span>·</span>
+    <span id="p-goals">進球 0</span>
+    <span>·</span>
+    <span id="p-best">最高 0</span>
+    <span>·</span>
+    <span id="p-diff">⚽ 普通</span>
+    <span>·</span>
+    <span id="p-player">梅西</span>
+  </div>
+  <div id="p-msg">拖曳瞄準，放開射門！</div>
+</div>
+<div id="p-flash"></div>
+<div id="btn-shoot">射門<small>⚽</small></div>
+<div id="p-ver">v1.0</div>
+
+<!-- 開始畫面 -->
+<div id="start">
+  <div class="panel">
+    <img class="logo" src="./assets/logo.png" alt="LS" />
+    <h1>點球<span>大戰</span></h1>
+    <p class="sub">LS 特輯 · 5 球決勝 · 挑戰最高分</p>
+
+    <p class="diff-title">選擇難度</p>
+    <div id="diff-row">
+      <button class="dbtn" data-diff="easy">😊 簡單<small>守門員動作慢</small></button>
+      <button class="dbtn active" data-diff="normal">⚽ 普通<small>守門員會猜方向</small></button>
+      <button class="dbtn" data-diff="hard">😤 困難<small>守門員反應很快</small></button>
+    </div>
+    <p id="diff-desc">守門員會猜方向，踢角落比較容易進，一直踢中路會被撲</p>
+
+    <p class="diff-title">選擇球員</p>
+    <div id="char-row"></div>
+    <p id="char-desc">梅西 · 10 號　（贏一場就能解鎖下一位超級巨星）</p>
+
+    <button id="btn-play">開始踢球</button>
+    <p class="tip">🖱 電腦：移動滑鼠瞄準、點一下射門　📱 iPad：拖曳瞄準、放開射門（或按右下「射門」）</p>
+    <p class="ver" id="ver-line">v1.0</p>
+  </div>
+</div>
+
+<!-- 結算 -->
+<div id="pover" class="hidden">
+  <div class="panel">
+    <h2 id="pover-title">⚽ 比賽結束</h2>
+    <div class="score-line" id="pover-score">5 球進了 <b>0</b> 球</div>
+    <button id="btn-again">🔁 再來一次</button>
+    <button id="btn-change-diff" class="ghost">🎚 換難度</button>
+  </div>
+</div>
+
+<script type="module" src="./js/penalty.js"></script>
+</body>
+</html>
