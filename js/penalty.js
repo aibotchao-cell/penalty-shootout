@@ -203,6 +203,55 @@ keeper.position.copy(KEEPER_HOME);
 keeper.scale.setScalar(1.28);
 scene.add(keeper);
 
+// ---------------------- 敵隊 5 位射手 --------------------------------------
+const RIVALS = [
+  { name: '紅隊前鋒', kit: 0xc0392b, hair: 0x1a1210, skin: 0xd9a06a },
+  { name: '紅隊隊長', kit: 0xa93226, hair: 0x2a1a12, skin: 0xe0a878 },
+  { name: '紅隊快馬', kit: 0xcb4335, hair: 0x14100e, skin: 0x8a5a3b },
+  { name: '紅隊重砲', kit: 0x922b21, hair: 0xd9c27a, skin: 0xf3cda6 },
+  { name: '紅隊新星', kit: 0xd98880, hair: 0x5a3a1a, skin: 0xd9a06a },
+];
+const rival = new THREE.Group();
+rival.visible = false;
+scene.add(rival);
+let rivalName = '';
+
+function setRival(idx) {
+  while (rival.children.length) {
+    const c = rival.children.pop();
+    rival.remove(c);
+    c.traverse?.((n) => { if (n.material) n.material.dispose?.(); if (n.geometry) n.geometry.dispose?.(); });
+  }
+  const r = RIVALS[idx % RIVALS.length];
+  rivalName = r.name;
+  const fig = makeFigure({ kit: r.kit, kit2: 0xffffff, shorts: 0x2a1a12, hair: r.hair, skin: r.skin, gloves: false });
+  fig.rotation.y = Math.PI / 2;          // 面向球門／鏡頭（守門員視角看得到他的正面）
+  rival.add(fig);
+  rival.position.set(11.8, 1.0, 18);
+}
+
+// 鏡頭：踢球視角 / 守門員視角（撲救時往旁邊倒）
+const CAM_SHOOT = new THREE.Vector3(14.6, 2.15, GOAL_Z);
+const CAM_KEEP = new THREE.Vector3(6.6, 2.05, GOAL_Z);
+const _camTmp = new THREE.Vector3();
+const _lookTmp = new THREE.Vector3();
+
+function updateCamera(dt) {
+  if (state.turn === 'their') {
+    let pz = CAM_KEEP.z;
+    if (state.diveZone === 0) pz = GOAL_Z - 2.0;
+    else if (state.diveZone === 2) pz = GOAL_Z + 2.0;
+    _camTmp.set(CAM_KEEP.x, CAM_KEEP.y, pz);
+    camera.position.lerp(_camTmp, Math.min(1, dt * 7));
+    _lookTmp.set(11.8, 1.9, GOAL_Z);
+    camera.lookAt(_lookTmp);
+  } else {
+    camera.position.lerp(CAM_SHOOT, Math.min(1, dt * 5));
+    _lookTmp.set(AIM_X, 1.85, GOAL_Z);
+    camera.lookAt(_lookTmp);
+  }
+}
+
 // 玩家只顯示在 HUD（不站在場上擋畫面）
 function applyPlayer() {
   const p = PLAYERS.find((x) => x.id === save.current) || PLAYERS[0];
@@ -230,10 +279,13 @@ scene.add(aimDot);
 
 // ------------------------------ 狀態 ---------------------------------------
 const state = {
-  phase: 'ready',            // ready | aim | wind（動作前搖）| fly | result | done
+  phase: 'ready',            // ready | aim | wind | fly | result | their | done
   diff: 'normal',
+  turn: 'our',               // our = 我方踢 / their = 換我當守門員
+  round: 1,                  // 第幾輪（每輪各踢一球）
   shot: 1,
-  goals: 0,
+  goals: 0,                  // 我方進球
+  theirGoals: 0,             // 敵方進球
   aim: new THREE.Vector2(GOAL_Z, 2.2),
   t: 0,
   flight: 0.55,
@@ -243,6 +295,12 @@ const state = {
   outcome: null,
   willSave: false,
   diveErr: 99,
+  diveZone: -1,              // 我當守門員時選的撲救方向 0左 1中 2右
+  theirZone: 1,              // 敵方射門落在哪一格
+  theirT: 0,
+  theirResolved: false,
+  kamFrom: new THREE.Vector3(14.6, 2.15, GOAL_Z),
+  kamTo: new THREE.Vector3(14.6, 2.15, GOAL_Z),
   ballFrom: new THREE.Vector3(),
   ballTo: new THREE.Vector3(),
   keeperTo: new THREE.Vector3().copy(KEEPER_HOME),
@@ -252,8 +310,8 @@ const state = {
 
 function updateHud() {
   const d = DIFF[state.diff];
-  el('p-shot').textContent = state.phase === 'done' ? '結束' : `第 ${state.shot} / ${TOTAL_SHOTS} 球`;
-  el('p-goals').textContent = `進球 ${state.goals}`;
+  el('p-shot').textContent = state.phase === 'done' ? '結束' : `第 ${state.round} 輪`;
+  el('p-score').textContent = `我方 ${state.goals} : ${state.theirGoals} 敵方`;
   el('p-best').textContent = `最高 ${save.best}`;
   el('p-diff').textContent = `${d.icon} ${d.name}`;
   el('p-coins').textContent = `💰 ${save.coins}`;
@@ -301,6 +359,17 @@ canvas.addEventListener('pointerup', (e) => {
 el('btn-shoot').addEventListener('click', (e) => {
   e.preventDefault();
   if (state.phase === 'aim') shoot();
+});
+
+// 當守門員時：選撲救方向
+document.querySelectorAll('#p-dive .dbtn2').forEach((b) => {
+  b.addEventListener('click', () => {
+    if (state.turn !== 'their') return;
+    if (state.phase !== 'their' && state.phase !== 'theirFly' && state.phase !== 'theirResult') return;
+    state.diveZone = Number(b.dataset.zone);
+    document.querySelectorAll('#p-dive .dbtn2').forEach((x) => x.classList.toggle('chosen', x === b));
+    if (state.phase === 'their') msg('好！撲這裡…', '');
+  });
 });
 
 // ----------------------- 開始畫面的選項（難度＋球員）------------------------
@@ -446,40 +515,42 @@ function resolveShot() {
   setTimeout(() => { el('p-flash').className = ''; }, 700);
 }
 
+// ------------------- 5 對 5：我方踢完 → 換敵方（我當守門員）-------------------
+function beginTheirTurn() {
+  state.turn = 'their';
+  state.phase = 'their';
+  state.diveZone = -1;
+  state.theirZone = 1;
+  state.theirT = 0;
+  state.theirResolved = false;
+  state.t = 0;
+  keeper.position.copy(KEEPER_HOME);
+  state.keeperTo.copy(KEEPER_HOME);
+  trailGroup.visible = false;
+  trailQueue = [];
+  ball.position.copy(SPOT);
+  setRival(state.round - 1);
+  rival.visible = true;
+  el('p-dive').classList.add('show');
+  el('btn-shoot').style.display = 'none';
+  document.querySelectorAll('#p-dive .dbtn2').forEach((b) => b.classList.remove('chosen'));
+  // 敵方要踢哪一格（難度越高越會踢角落）
+  const cornerBias = state.diff === 'hard' ? 0.85 : state.diff === 'normal' ? 0.6 : 0.35;
+  state.theirZone = Math.random() < cornerBias ? (Math.random() < 0.5 ? 0 : 2) : 1;
+  msg('🧤 換你當守門員！選一個方向撲', '');
+  updateHud();
+}
+
 function nextShot() {
-  if (state.shot >= TOTAL_SHOTS) {
-    state.phase = 'done';
+  if (state.turn === 'our') { beginTheirTurn(); return; }
+  afterTheirTurn();
+}
 
-    // 💰 賺錢：每進一球 +100 元、完成一輪 +50 元，難度加倍
-    const mult = COIN_MULT[state.diff] || 1;
-    const earned = Math.round((state.goals * COIN_PER_GOAL + COIN_FINISH) * mult);
-    save.coins += earned;
-    if (state.goals > save.best) save.best = state.goals;
-    persist();
-    try { localStorage.setItem('ls_penalty_best', String(save.best)); } catch (e) { /* 忽略 */ }
-    updateHud();
-
-    const d = DIFF[state.diff];
-    const cur = PLAYERS.find((p) => p.id === save.current);
-    const title = state.goals === TOTAL_SHOTS ? '🏆 五球全進！太神了！'
-      : state.goals >= WIN_GOALS ? '🔥 太厲害了！'
-        : state.goals >= 3 ? '👏 表現不錯！'
-          : '💪 再練一下就會更準！';
-    const canBuy = PLAYERS.some((p) => !save.unlocked.includes(p.id) && p.price <= save.coins);
-    const nextTarget = PLAYERS.find((p) => !save.unlocked.includes(p.id));
-    el('pover-title').textContent = title;
-    el('pover-score').innerHTML =
-      `${cur.name} ${cur.num} 號 · ${d.icon} ${d.name}難度<br>5 球進了 <b>${state.goals}</b> 球<br>` +
-      `<span class="best">最高紀錄：${save.best} 球</span>` +
-      `<br><span class="unlock">💰 這輪賺了 ${earned} 元（共 ${save.coins} 元）</span>` +
-      (canBuy
-        ? '<br><span class="best">🛒 錢夠了！可以去買新的超級巨星</span>'
-        : (nextTarget ? `<br><span class="best">再賺 ${nextTarget.price - save.coins} 元就能買 ${nextTarget.name}</span>` : '<br><span class="best">全部球員都買到了 ✨</span>'));
-    el('pover').classList.remove('hidden');
-    return;
-  }
-  state.shot++;
-  state.phase = 'aim';
+function afterTheirTurn() {
+  state.turn = 'our';
+  rival.visible = false;
+  el('p-dive').classList.remove('show');
+  el('btn-shoot').style.display = '';
   ball.position.copy(SPOT);
   trailGroup.visible = false;
   trailQueue = [];
@@ -489,14 +560,104 @@ function nextShot() {
   state.aim.set(GOAL_Z, 2.2);
   aimRing.position.set(AIM_RING_X, 2.2, GOAL_Z);
   aimDot.position.copy(aimRing.position);
+
+  if (state.round >= TOTAL_SHOTS) {
+    if (state.goals !== state.theirGoals) { finishMatch(); return; }
+    state.round++;                 // 平手 → 延長賽
+    state.sudden = true;
+    msg('⚖️ 平手！延長賽，加油！', '');
+  } else {
+    state.round++;
+  }
+  state.phase = 'aim';
   updateHud();
-  msg('拖曳瞄準，放開射門！');
+  if (!state.sudden) msg('換你踢！拖曳瞄準，放開射門');
+}
+
+// 敵方射門（球朝我飛過來）
+function theirKick() {
+  const d = DIFF[state.diff];
+  const zoneZ = state.theirZone === 0 ? GOAL_Z - 2.1 : state.theirZone === 2 ? GOAL_Z + 2.1 : GOAL_Z;
+  const jitter = (Math.random() - 0.5) * (d.errZ * 0.45);
+  state.ballFrom.copy(SPOT);
+  state.ballTo.set(6.3, 1.45 + Math.random() * 1.7, zoneZ + jitter);
+  state.flight = 0.5;
+  state.t = 0;
+  state.phase = 'theirFly';
+  trailGroup.visible = true;
+  trailQueue = [];
+  for (const dd of trailDots) dd.material.color.setHex(0xff6b6b);
+  kickSound(1);
+  msg('⚡ 敵方射門！', 'shoot');
+  const dz = state.diveZone === 0 ? GOAL_Z - 2.1 : state.diveZone === 2 ? GOAL_Z + 2.1 : GOAL_Z;
+  state.diveErr = Math.abs(dz - state.ballTo.z);
+  state.willSave = state.diveZone >= 0 && state.diveErr < 1.25 && Math.random() < 0.92;
+}
+
+function resolveTheir() {
+  if (state.willSave) {
+    state.outcome = 'save';
+    goalCheer();
+    el('p-flash').className = 'goal';
+    msg('🧤 撲到了！太棒了！', 'goal');
+    state.ballFrom.copy(ball.position);
+    state.ballTo.set(9.5, 2.4, ball.position.z + (Math.random() - 0.5) * 4);
+  } else {
+    state.outcome = 'theirGoal';
+    state.theirGoals++;
+    saveGroan();
+    el('p-flash').className = 'save';
+    msg('😣 被進球了…', 'save');
+    state.ballFrom.copy(ball.position);
+    state.ballTo.set(5.5, Math.max(1.3, state.ballTo.y), state.ballTo.z);
+  }
+  state.t = 0;
+  state.resultTimer = 0;
+  state.phase = 'theirResult';
+  setTimeout(() => { el('p-flash').className = ''; }, 700);
+  updateHud();
+}
+
+// 比賽結束：算錢 + 顯示結果
+function finishMatch() {
+  state.phase = 'done';
+  const mine = state.goals;
+  const theirs = state.theirGoals;
+  const win = mine > theirs;
+  const mult = COIN_MULT[state.diff] || 1;
+  const earned = Math.round((mine * COIN_PER_GOAL + COIN_FINISH + (win ? 300 : 0)) * mult);
+  save.coins += earned;
+  if (mine > save.best) save.best = mine;
+  persist();
+  try { localStorage.setItem('ls_penalty_best', String(save.best)); } catch (e) { /* 忽略 */ }
+  updateHud();
+
+  const d = DIFF[state.diff];
+  const cur = PLAYERS.find((p) => p.id === save.current);
+  const title = win ? '🏆 你贏了！' : (mine === theirs ? '⚖️ 平手' : '😢 輸了…下次加油！');
+  const canBuy = PLAYERS.some((p) => !save.unlocked.includes(p.id) && p.price <= save.coins);
+  const nextTarget = PLAYERS.find((p) => !save.unlocked.includes(p.id));
+  el('pover-title').textContent = title;
+  el('pover-score').innerHTML =
+    `${cur.name} ${cur.num} 號 · ${d.icon} ${d.name}難度<br>` +
+    `我方 <b>${mine}</b> : <b>${theirs}</b> 敵方<br>` +
+    `<span class="best">最高紀錄：${save.best} 球</span>` +
+    `<br><span class="unlock">💰 這場賺了 ${earned} 元（共 ${save.coins} 元）${win ? ' · 贏球獎金 +300' : ''}</span>` +
+    (canBuy
+      ? '<br><span class="best">🛒 錢夠了！可以去買新的超級巨星</span>'
+      : (nextTarget ? `<br><span class="best">再賺 ${nextTarget.price - save.coins} 元就能買 ${nextTarget.name}</span>` : '<br><span class="best">全部球星都買到了 ✨</span>'));
+  el('pover').classList.remove('hidden');
 }
 
 function resetGame() {
   state.phase = 'aim';
+  state.turn = 'our';
+  state.round = 1;
+  state.sudden = false;
   state.shot = 1;
   state.goals = 0;
+  state.theirGoals = 0;
+  state.diveZone = -1;
   state.outcome = null;
   state.t = 0;
   state.kickT = 0;
@@ -509,9 +670,15 @@ function resetGame() {
   state.aim.set(GOAL_Z, 2.2);
   aimRing.position.set(AIM_RING_X, 2.2, GOAL_Z);
   aimDot.position.copy(aimRing.position);
+  rival.visible = false;
+  el('p-dive').classList.remove('show');
+  el('btn-shoot').style.display = '';
+  document.querySelectorAll('#p-dive .dbtn2').forEach((b) => b.classList.remove('chosen'));
+  camera.position.copy(CAM_SHOOT);
+  camera.lookAt(AIM_X, 1.85, GOAL_Z);
   el('pover').classList.add('hidden');
   updateHud();
-  msg('拖曳瞄準，放開射門！');
+  msg('第 1 輪：你先踢！拖曳瞄準，放開射門');
 }
 
 function goFullScreen() {
@@ -536,7 +703,29 @@ function updateTrail() {
 function animateBall(dt) {
   const sp = SHOTS[state.shotKey] || SHOTS.basic;
 
-  if (state.phase === 'wind') {
+  if (state.phase === 'their') {
+    // 敵方準備射門（約 1.5 秒讓你選撲救方向）
+    state.theirT += dt;
+    if (state.theirT > 1.5) theirKick();
+  } else if (state.phase === 'theirFly') {
+    state.t += dt;
+    const k = Math.min(1, state.t / state.flight);
+    const e = 1 - Math.pow(1 - k, 2);
+    ball.position.x = THREE.MathUtils.lerp(state.ballFrom.x, state.ballTo.x, e);
+    ball.position.z = THREE.MathUtils.lerp(state.ballFrom.z, state.ballTo.z, e);
+    ball.position.y = THREE.MathUtils.lerp(state.ballFrom.y, state.ballTo.y, e) + Math.sin(k * Math.PI) * 0.22;
+    ball.rotation.x -= dt * 18;
+    if (k >= 1) resolveTheir();
+  } else if (state.phase === 'theirResult') {
+    state.resultTimer += dt;
+    state.t += dt;
+    const k = Math.min(1, state.t / 0.4);
+    ball.position.x = THREE.MathUtils.lerp(state.ballFrom.x, state.ballTo.x, k);
+    ball.position.z = THREE.MathUtils.lerp(state.ballFrom.z, state.ballTo.z, k);
+    ball.position.y = THREE.MathUtils.lerp(state.ballFrom.y, state.ballTo.y, k)
+      + (state.outcome === 'save' ? Math.sin(k * Math.PI) * 0.7 : -0.2 * k);
+    if (state.resultTimer > 1.4) nextShot();
+  } else if (state.phase === 'wind') {
     state.windT -= dt;
     if (state.windT <= 0) {
       state.phase = 'fly';
@@ -587,6 +776,7 @@ function frame() {
   const dt = Math.min(0.05, clock.getDelta());
   animateBall(dt);
   animateKeeper(dt);
+  updateCamera(dt);
   if (state.phase === 'aim') {
     aimRing.scale.setScalar(1 + Math.sin(performance.now() / 320) * 0.07);
   }

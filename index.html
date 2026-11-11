@@ -88,6 +88,17 @@
   .cbtn.buyable { border-color: #7fe36a; background: rgba(127,227,106,.1); color: #d7ffcc; }
   .cbtn.buyable .num { color: #7fe36a; opacity: 1; font-weight: 800; }
   #p-coins { color: #ffd27f; font-weight: 800; }
+  /* 當守門員時的撲救按鈕 */
+  #p-dive { display: none; gap: 10px; margin-top: 16px; pointer-events: auto; }
+  #p-dive.show { display: flex; }
+  .dbtn2 {
+    padding: 15px 20px; border-radius: 14px; cursor: pointer;
+    background: rgba(20,16,12,.82); border: 2px solid rgba(255,179,71,.55); color: #ffe6b8;
+    font-size: 17px; font-weight: 900; letter-spacing: 1px; touch-action: manipulation;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45); user-select: none;
+  }
+  .dbtn2:active { transform: scale(.94); }
+  .dbtn2.chosen { background: #ffb347; color: #2a1a05; border-color: #fff; }
   #char-desc { margin-top: 8px; font-size: 12.5px; opacity: .75; min-height: 18px; }
   #btn-play {
     margin-top: 14px; font-size: 20px; font-weight: 900; padding: 15px 52px; border-radius: 12px; cursor: pointer;
@@ -122,7 +133,7 @@
   <div id="p-top">
     <span id="p-shot">第 1 / 5 球</span>
     <span>·</span>
-    <span id="p-goals">進球 0</span>
+    <span id="p-score">我方 0 : 0 敵方</span>
     <span>·</span>
     <span id="p-best">最高 0</span>
     <span>·</span>
@@ -133,6 +144,11 @@
     <span id="p-coins">💰 0</span>
   </div>
   <div id="p-msg">拖曳瞄準，放開射門！</div>
+  <div id="p-dive">
+    <div class="dbtn2" data-zone="0">⬅ 左</div>
+    <div class="dbtn2" data-zone="1">⬆ 中間</div>
+    <div class="dbtn2" data-zone="2">右 ➡</div>
+  </div>
 </div>
 <div id="p-flash"></div>
 <div id="btn-shoot">射門<small>⚽</small></div>
