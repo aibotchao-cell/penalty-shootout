@@ -33,13 +33,37 @@ const DIFF = {
     desc: '守門員反應很快、判斷很準，要踢到很角落才有機會' },
 };
 
+// --------------------------- 射門種類（跟著球員）---------------------------
+const SHOTS = {
+  basic: {
+    name: '基本射門', icon: '⚽', extraErr: 0, flight: 0.55, delay: 0, curve: 0, color: 0x9dc0e8,
+    desc: '穩定好控制，一開始就會',
+  },
+  curve: {
+    name: '旋球', icon: '🌀', extraErr: 0.30, flight: 0.62, delay: 0, curve: 1.15, color: 0x5ad1ff,
+    desc: '球會彎進角落，守門員很難判斷',
+  },
+  rhythm: {
+    name: '節奏變化', icon: '⏱', extraErr: 0.30, flight: 0.55, delay: 0.24, curve: 0, color: 0xffd24a,
+    desc: '故意停一下再踢，守門員會先動',
+  },
+  fake: {
+    name: '假動作射門', icon: '🎭', extraErr: 0.42, flight: 0.55, delay: 0.2, curve: 0, color: 0xc77dff,
+    desc: '先騙守門員撲一邊，再踢另一邊',
+  },
+  power: {
+    name: '爆射', icon: '💥', extraErr: 0.28, flight: 0.34, delay: 0, curve: 0, color: 0xff5a3c,
+    desc: '又快又直，守門員來不及反應',
+  },
+};
+
 // --------------------------- 超級巨星（用錢買）-----------------------------
 const PLAYERS = [
-  { id: 'messi', name: '梅西', num: 10, price: 0, kit: 0x9dc0e8, kit2: 0xffffff, shorts: 0x15161c, hair: 0x2a1a12, skin: 0xe0a878 },
-  { id: 'ronaldo', name: 'C羅', num: 7, price: 500, kit: 0xa41d2a, kit2: 0x125c33, shorts: 0x125c33, hair: 0x1a1210, skin: 0xeab98f },
-  { id: 'mbappe', name: '姆巴佩', num: 10, price: 900, kit: 0x1b3f8b, kit2: 0xffffff, shorts: 0x1b3f8b, hair: 0x14100e, skin: 0x8a5a3b },
-  { id: 'neymar', name: '內馬爾', num: 10, price: 1400, kit: 0xf2d200, kit2: 0x1f7a3a, shorts: 0x1f7a3a, hair: 0x5a3a1a, skin: 0xd9a06a },
-  { id: 'haaland', name: '哈蘭德', num: 9, price: 2000, kit: 0x6cabdd, kit2: 0xffffff, shorts: 0xffffff, hair: 0xd9c27a, skin: 0xf3cda6 },
+  { id: 'messi', name: '梅西', num: 10, price: 0, shot: 'basic', kit: 0x9dc0e8, kit2: 0xffffff, shorts: 0x15161c, hair: 0x2a1a12, skin: 0xe0a878 },
+  { id: 'ronaldo', name: 'C羅', num: 7, price: 500, shot: 'curve', kit: 0xa41d2a, kit2: 0x125c33, shorts: 0x125c33, hair: 0x1a1210, skin: 0xeab98f },
+  { id: 'mbappe', name: '姆巴佩', num: 10, price: 900, shot: 'rhythm', kit: 0x1b3f8b, kit2: 0xffffff, shorts: 0x1b3f8b, hair: 0x14100e, skin: 0x8a5a3b },
+  { id: 'neymar', name: '內馬爾', num: 10, price: 1400, shot: 'fake', kit: 0xf2d200, kit2: 0x1f7a3a, shorts: 0x1f7a3a, hair: 0x5a3a1a, skin: 0xd9a06a },
+  { id: 'haaland', name: '哈蘭德', num: 9, price: 2000, shot: 'power', kit: 0x6cabdd, kit2: 0xffffff, shorts: 0xffffff, hair: 0xd9c27a, skin: 0xf3cda6 },
 ];
 
 // 賺錢規則：每進一球 +100 元、完成一輪 +50 元、難度加倍（簡單 ×1／普通 ×1.5／困難 ×2）
@@ -112,6 +136,23 @@ scene.add(ball);
   scene.add(dot);
 }
 
+// 射門軌跡（彩色球尾，顏色依射門種類）
+const TRAIL_N = 10;
+const trailGroup = new THREE.Group();
+trailGroup.visible = false;
+const trailDots = [];
+for (let i = 0; i < TRAIL_N; i++) {
+  const rad = 0.3 * (1 - i / TRAIL_N) + 0.05;
+  const m = new THREE.Mesh(
+    new THREE.SphereGeometry(rad, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 * (1 - i / TRAIL_N) + 0.06 })
+  );
+  trailGroup.add(m);
+  trailDots.push(m);
+}
+scene.add(trailGroup);
+let trailQueue = [];
+
 // ------------------------------ 人物 (方塊風) ------------------------------
 function makeFigure(o) {
   const g = new THREE.Group();
@@ -165,7 +206,8 @@ scene.add(keeper);
 // 玩家只顯示在 HUD（不站在場上擋畫面）
 function applyPlayer() {
   const p = PLAYERS.find((x) => x.id === save.current) || PLAYERS[0];
-  el('p-player').textContent = `${p.name} ${p.num}`;
+  const sp = SHOTS[p.shot] || SHOTS.basic;
+  el('p-player').textContent = `${p.name} ${p.num} · ${sp.icon}${sp.name}`;
 }
 
 // ------------------------------ 準心 ---------------------------------------
@@ -188,13 +230,16 @@ scene.add(aimDot);
 
 // ------------------------------ 狀態 ---------------------------------------
 const state = {
-  phase: 'ready',            // ready | aim | fly | result | done
+  phase: 'ready',            // ready | aim | wind（動作前搖）| fly | result | done
   diff: 'normal',
   shot: 1,
   goals: 0,
   aim: new THREE.Vector2(GOAL_Z, 2.2),
   t: 0,
   flight: 0.55,
+  windT: 0,
+  shotKey: 'basic',
+  curveDir: 1,
   outcome: null,
   willSave: false,
   diveErr: 99,
@@ -279,8 +324,8 @@ function renderChars(note = '') {
     b.className = 'cbtn'
       + (owned ? (p.id === save.current ? ' active' : '') : (affordable ? ' buyable' : ' locked'));
     b.innerHTML = owned
-      ? `${p.name}<span class="num">${p.num} 號</span>`
-      : `${p.name}<span class="num">💰 ${p.price}</span>`;
+      ? `${p.name}<span class="num">${p.num} 號 · ${SHOTS[p.shot].icon}${SHOTS[p.shot].name}</span>`
+      : `${p.name}<span class="num">💰 ${p.price}　${SHOTS[p.shot].icon}${SHOTS[p.shot].name}</span>`;
     b.addEventListener('click', () => {
       if (!owned) {
         if (affordable) {
@@ -304,7 +349,9 @@ function renderChars(note = '') {
     row.appendChild(b);
   });
   const cur = PLAYERS.find((x) => x.id === save.current) || PLAYERS[0];
-  el('char-desc').textContent = note || `💰 你有 ${save.coins} 元　·　目前球員：${cur.name} ${cur.num} 號`;
+  const curShot = SHOTS[cur.shot] || SHOTS.basic;
+  el('char-desc').textContent = note
+    || `💰 你有 ${save.coins} 元　·　目前：${cur.name} ${cur.num} 號（${curShot.icon}${curShot.name}：${curShot.desc}）`;
   el('p-coins').textContent = `💰 ${save.coins}`;
 }
 
@@ -330,27 +377,49 @@ el('btn-change-diff').addEventListener('click', () => {
 function shoot() {
   if (state.phase !== 'aim') return;
   const d = DIFF[state.diff];
+  const pl = PLAYERS.find((x) => x.id === save.current) || PLAYERS[0];
+  const sp = SHOTS[pl.shot] || SHOTS.basic;
+  state.shotKey = pl.shot;
 
-  // 守門員一定會有反應：往球的方向撲（判斷誤差依難度）
+  // 守門員一定會有反應：往球的方向撲（判斷誤差＝難度 + 射門種類加成）
   // ★ 踢角落（貼近門柱或上方）時守門員更難搆到 → 更容易進
   const extreme = Math.abs(state.aim.x - GOAL_Z) > 2.2 || state.aim.y > 3.3;
-  const extraErr = extreme ? 0.6 : 0;
+  const extraErr = (extreme ? 0.6 : 0) + sp.extraErr;
   const ez = (Math.random() * 2 - 1) * (d.errZ + extraErr);
   const ey = (Math.random() * 2 - 1) * (d.errY + extraErr * 0.5);
   const kbz = THREE.MathUtils.clamp(state.aim.x + ez, GOAL_Z_MIN - 0.4, GOAL_Z_MAX + 0.4);
   const kby = THREE.MathUtils.clamp(state.aim.y + ey, 1.0, 3.6);
   state.diveErr = Math.hypot(ez, ey);
   state.keeperTo.set(KEEPER_HOME.x, Math.max(1.0, kby - 1.35), kbz);
+  state.willSave = state.diveErr < d.reach * (0.9 + Math.random() * 0.2);
 
   state.ballFrom.copy(ball.position);
   state.ballTo.set(AIM_X, state.aim.y, state.aim.x);
+  state.flight = sp.flight;
+  state.curveDir = state.aim.x >= GOAL_Z ? 1 : -1;
   state.t = 0;
-  state.kickT = 0;
-  state.phase = 'fly';
+  state.windT = sp.delay;
   state.outcome = null;
-  state.willSave = state.diveErr < d.reach * (0.9 + Math.random() * 0.2);
-  kickSound(1);
-  msg('射門！', 'shoot');
+
+  for (const d of trailDots) d.material.color.setHex(sp.color);
+  trailQueue = [];
+  trailGroup.visible = true;
+
+  if (state.windT > 0) {
+    state.phase = 'wind';
+    if (pl.shot === 'fake') {
+      msg('🎭 假動作…', 'shoot');
+      const fakeZ = GOAL_Z - (state.aim.x - GOAL_Z) * 0.9;
+      aimRing.position.set(AIM_RING_X, state.aim.y, THREE.MathUtils.clamp(fakeZ, GOAL_Z_MIN, GOAL_Z_MAX));
+      aimDot.position.copy(aimRing.position);
+    } else {
+      msg('⏱ 等一下再踢…', 'shoot');
+    }
+  } else {
+    state.phase = 'fly';
+    kickSound(1);
+    msg(`${sp.icon} ${sp.name}！`, 'shoot');
+  }
 }
 
 function resolveShot() {
@@ -412,6 +481,8 @@ function nextShot() {
   state.shot++;
   state.phase = 'aim';
   ball.position.copy(SPOT);
+  trailGroup.visible = false;
+  trailQueue = [];
   keeper.position.copy(KEEPER_HOME);
   keeper.rotation.set(0, 0, 0);
   state.keeperTo.copy(KEEPER_HOME);
@@ -430,6 +501,8 @@ function resetGame() {
   state.t = 0;
   state.kickT = 0;
   ball.position.copy(SPOT);
+  trailGroup.visible = false;
+  trailQueue = [];
   keeper.position.copy(KEEPER_HOME);
   keeper.rotation.set(0, 0, 0);
   state.keeperTo.copy(KEEPER_HOME);
@@ -449,16 +522,41 @@ function goFullScreen() {
 // ------------------------------ 更新 ---------------------------------------
 const clock = new THREE.Clock();
 
+function updateTrail() {
+  if (!trailGroup.visible) return;
+  trailQueue.push(ball.position.clone());
+  if (trailQueue.length > TRAIL_N) trailQueue.shift();
+  const last = trailQueue[trailQueue.length - 1] || ball.position;
+  for (let i = 0; i < TRAIL_N; i++) {
+    const p = trailQueue[trailQueue.length - 1 - i] || last;
+    trailDots[i].position.copy(p);
+  }
+}
+
 function animateBall(dt) {
-  if (state.phase === 'fly') {
+  const sp = SHOTS[state.shotKey] || SHOTS.basic;
+
+  if (state.phase === 'wind') {
+    state.windT -= dt;
+    if (state.windT <= 0) {
+      state.phase = 'fly';
+      state.t = 0;
+      kickSound(1);
+      msg(`${sp.icon} ${sp.name}！`, 'shoot');
+      aimRing.position.set(AIM_RING_X, state.aim.y, state.aim.x);
+      aimDot.position.copy(aimRing.position);
+    }
+  } else if (state.phase === 'fly') {
     state.t += dt;
     const k = Math.min(1, state.t / state.flight);
     const e = 1 - Math.pow(1 - k, 2.2);
+    const curveOff = sp.curve ? Math.sin(k * Math.PI) * sp.curve * state.curveDir : 0;
     ball.position.x = THREE.MathUtils.lerp(state.ballFrom.x, state.ballTo.x, e);
-    ball.position.z = THREE.MathUtils.lerp(state.ballFrom.z, state.ballTo.z, e);
+    ball.position.z = THREE.MathUtils.lerp(state.ballFrom.z, state.ballTo.z, e) + curveOff;
     ball.position.y = THREE.MathUtils.lerp(state.ballFrom.y, state.ballTo.y, e) + Math.sin(k * Math.PI) * 0.35;
-    ball.rotation.x -= dt * 14;
+    ball.rotation.x -= dt * (sp.flight < 0.4 ? 26 : 14);
     ball.rotation.z -= dt * 6;
+    if (curveOff) ball.rotation.y -= dt * 11 * state.curveDir;
     if (k >= 1) resolveShot();
   } else if (state.phase === 'result') {
     state.resultTimer += dt;
@@ -471,11 +569,13 @@ function animateBall(dt) {
     if (state.outcome === 'save') ball.position.y = Math.max(1.1, ball.position.y);
     if (state.resultTimer > 1.5) nextShot();
   }
+  updateTrail();
 }
 
 function animateKeeper(dt) {
   const d = DIFF[state.diff];
-  const speed = state.phase === 'fly' ? d.speed : 3.0;
+  // 動作前搖（節奏變化／假動作）時守門員也會先撲出去 → 被騙
+  const speed = (state.phase === 'fly' || state.phase === 'wind') ? d.speed : 3.0;
   keeper.position.lerp(state.keeperTo, Math.min(1, dt * speed));
   const dz = keeper.position.z - GOAL_Z;
   const lift = Math.max(0, keeper.position.y - 1.0);
