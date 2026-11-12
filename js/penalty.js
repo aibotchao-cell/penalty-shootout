@@ -6,10 +6,10 @@
 //   ● 5 球決勝，最高分與解鎖進度都存在瀏覽器
 // ---------------------------------------------------------------------------
 import * as THREE from 'three';
-import { World, buildCourt, buildMesh } from './world.js';
-import { ballTexture, logoTexture } from './logo.js';
-import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud, refWhistle } from './sfx.js';
-import { VERSION } from './version.js';
+import { World, buildCourt, buildMesh } from './world.js?v=1.8';
+import { ballTexture, logoTexture } from './logo.js?v=1.8';
+import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud, refWhistle } from './sfx.js?v=1.8';
+import { VERSION } from './version.js?v=1.8';
 
 const el = (id) => document.getElementById(id);
 
@@ -179,15 +179,16 @@ function mcMats(frontMap, sideColor, topColor, bottomColor) {
   return [s, s, t, b, f, s];
 }
 
-// 8x8 像素臉（Minecraft 風格）
+// 8x8 像素臉（Minecraft 風格，五官畫大一點遠看也清楚）
 function mcFace(skin, hair) {
   return pxTexture(8, 8, (g2) => {
     g2.fillStyle = hex(skin); g2.fillRect(0, 0, 8, 8);
-    g2.fillStyle = hex(hair); g2.fillRect(0, 0, 8, 2);
-    g2.fillStyle = '#f4f4f4'; g2.fillRect(1, 3, 2, 1); g2.fillRect(5, 3, 2, 1);
-    g2.fillStyle = '#22314d'; g2.fillRect(2, 3, 1, 1); g2.fillRect(5, 3, 1, 1);
-    g2.fillStyle = 'rgba(0,0,0,0.16)'; g2.fillRect(3, 4, 2, 1);
-    g2.fillStyle = 'rgba(90,40,30,0.75)'; g2.fillRect(3, 6, 2, 1);
+    g2.fillStyle = hex(hair); g2.fillRect(0, 0, 8, 2);            // 瀏海
+    g2.fillStyle = '#f7f7f7'; g2.fillRect(1, 3, 2, 2); g2.fillRect(5, 3, 2, 2);   // 眼白 2x2
+    g2.fillStyle = '#2b3d5c'; g2.fillRect(2, 4, 1, 1); g2.fillRect(5, 4, 1, 1);   // 瞳孔
+    g2.fillStyle = hex(hair); g2.fillRect(1, 2, 2, 1); g2.fillRect(5, 2, 2, 1);   // 眉毛
+    g2.fillStyle = 'rgba(0,0,0,0.2)'; g2.fillRect(3, 5, 2, 1);                    // 鼻子
+    g2.fillStyle = '#8c4a3a'; g2.fillRect(2, 6, 4, 1);                            // 嘴巴
   });
 }
 
@@ -201,12 +202,18 @@ function mcJersey(kit, kit2) {
   });
 }
 
-// 4x12 手（袖子＋皮膚＋守門員手套）
-function mcArm(kit, skin, gloves) {
+// 4x12 手（袖子＋袖口條＋皮膚＋守門員手套）
+function mcArm(kit, kit2, skin, gloves) {
   return pxTexture(4, 12, (g2) => {
     g2.fillStyle = hex(kit); g2.fillRect(0, 0, 4, 4);
+    g2.fillStyle = hex(kit2); g2.fillRect(0, 3, 4, 1);
+    g2.fillStyle = 'rgba(0,0,0,0.18)'; g2.fillRect(0, 0, 1, 5);
     g2.fillStyle = hex(skin); g2.fillRect(0, 4, 4, 8);
-    if (gloves) { g2.fillStyle = '#ff8c1a'; g2.fillRect(0, 8, 4, 4); g2.fillStyle = '#e07b12'; g2.fillRect(0, 11, 4, 1); }
+    if (gloves) {
+      g2.fillStyle = '#ff8c1a'; g2.fillRect(0, 8, 4, 4);
+      g2.fillStyle = '#d9720c'; g2.fillRect(0, 11, 4, 1);
+      g2.fillStyle = '#ffb457'; g2.fillRect(1, 9, 1, 1);
+    }
   });
 }
 
@@ -225,12 +232,12 @@ function makeFigure(o) {
   const g = new THREE.Group();
   const U = 0.0563;
 
-  // 頭 0.45 立方
+  // 頭 0.51 立方（比照 Minecraft 大頭感）
   const head = new THREE.Mesh(
-    new THREE.BoxGeometry(8 * U, 8 * U, 8 * U),
+    new THREE.BoxGeometry(9 * U, 9 * U, 9 * U),
     mcMats(mcFace(o.skin, o.hair), o.skin, o.hair, o.skin)
   );
-  head.position.y = (12 + 12 + 4) * U;   // 腿 12 + 身體 12 + 頭一半 4 = 28
+  head.position.y = (12 + 12 + 4.5) * U;   // 腿 12 + 身體 12 + 頭一半 4.5
   g.add(head);
 
   // 身體 0.45 x 0.675 x 0.225
@@ -247,7 +254,7 @@ function makeFigure(o) {
     armPivot.position.set(sx * 6 * U, 24 * U, 0);
     const arm = new THREE.Mesh(
       new THREE.BoxGeometry(4 * U, 12 * U, 4 * U),
-      mcMats(mcArm(o.kit, o.skin, o.gloves), o.kit, o.kit, o.skin)
+      mcMats(mcArm(o.kit, o.kit2, o.skin, o.gloves), o.kit, o.kit, o.skin)
     );
     arm.position.y = -6 * U;
     armPivot.add(arm);
@@ -450,6 +457,7 @@ function updateHud() {
   el('p-score').textContent = `我方 ${state.goals} : ${state.theirGoals} 敵方`;
   el('p-best').textContent = `最高 ${save.best}`;
   el('p-diff').textContent = `${d.icon} ${d.name}`;
+  el('p-keeper').textContent = `🧤 ${curKeeper.name} ${'⭐'.repeat(curKeeper.stars)}`;
   el('p-coins').textContent = `💰 ${save.coins}`;
 }
 function msg(text, cls = '') {
@@ -676,7 +684,7 @@ function beginTheirTurn() {
   // 敵方要踢哪一格（難度越高越會踢角落）
   const cornerBias = state.diff === 'hard' ? 0.85 : state.diff === 'normal' ? 0.6 : 0.35;
   state.theirZone = Math.random() < cornerBias ? (Math.random() < 0.5 ? 0 : 2) : 1;
-  msg('🧤 換你當守門員！選一個方向撲', '');
+  msg(`🧤 換你當守門員！敵方：${rivalName}（選一個方向撲）`, '');
   refWhistle();
   updateHud();
 }
@@ -732,7 +740,7 @@ function theirKick() {
   trailQueue = [];
   for (const dd of trailDots) dd.material.color.setHex(0xff6b6b);
   kickSound(1);
-  msg('⚡ 敵方射門！', 'shoot');
+  msg(`⚡ ${rivalName} 射門！`, 'shoot');
   const dz = state.diveZone === 0 ? GOAL_Z - 2.1 : state.diveZone === 2 ? GOAL_Z + 2.1 : GOAL_Z;
   state.diveErr = Math.abs(dz - state.ballTo.z);
   state.willSave = state.diveZone >= 0 && state.diveErr < 1.25 && Math.random() < 0.92;
