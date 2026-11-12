@@ -6,10 +6,10 @@
 //   ● 5 球決勝，最高分與解鎖進度都存在瀏覽器
 // ---------------------------------------------------------------------------
 import * as THREE from 'three';
-import { World, buildCourt, buildMesh } from './world.js?v=1.8';
-import { ballTexture, logoTexture } from './logo.js?v=1.8';
-import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud, refWhistle } from './sfx.js?v=1.8';
-import { VERSION } from './version.js?v=1.8';
+import { World, buildCourt, buildMesh } from './world.js?v=1.9';
+import { ballTexture, logoTexture } from './logo.js?v=1.9';
+import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud, refWhistle } from './sfx.js?v=1.9';
+import { VERSION } from './version.js?v=1.9';
 
 const el = (id) => document.getElementById(id);
 
@@ -72,19 +72,17 @@ const COIN_FINISH = 50;
 const COIN_MULT = { easy: 1, normal: 1.5, hard: 2 };
 
 // --------------------------- 存檔 ------------------------------------------
+// ★ 每次開啟遊戲都是全新開始（錢、買到的球員、最高紀錄都不保留）
 const SAVE_KEY = 'ls_penalty_save_v1';
 const save = { unlocked: ['messi'], current: 'messi', best: 0, coins: 0 };
 try {
-  const raw = localStorage.getItem(SAVE_KEY);
-  if (raw) Object.assign(save, JSON.parse(raw));
+  // 清掉以前存在瀏覽器裡的舊存檔
+  localStorage.removeItem(SAVE_KEY);
+  localStorage.removeItem('ls_penalty_best');
 } catch (e) { /* 忽略 */ }
-if (!Array.isArray(save.unlocked) || !save.unlocked.includes('messi')) save.unlocked = ['messi'];
-if (!PLAYERS.some((p) => p.id === save.current)) save.current = 'messi';
-const oldBest = Number(localStorage.getItem('ls_penalty_best') || 0);
-if (oldBest > save.best) save.best = oldBest;
 
 function persist() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 忽略 */ }
+  // 不做任何儲存（每次開遊戲都重新開始）
 }
 
 // ------------------------------- 場景 --------------------------------------
@@ -786,7 +784,6 @@ function finishMatch() {
   save.coins = Math.max(0, save.coins + earned);
   if (mine > save.best) save.best = mine;
   persist();
-  try { localStorage.setItem('ls_penalty_best', String(save.best)); } catch (e) { /* 忽略 */ }
   updateHud();
 
   const d = DIFF[state.diff];
