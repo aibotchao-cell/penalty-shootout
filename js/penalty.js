@@ -664,9 +664,13 @@ function finishMatch() {
   const mine = state.goals;
   const theirs = state.theirGoals;
   const win = mine > theirs;
+  const draw = mine === theirs;
   const mult = COIN_MULT[state.diff] || 1;
-  const earned = Math.round((mine * COIN_PER_GOAL + COIN_FINISH + (win ? 300 : 0)) * mult);
-  save.coins += earned;
+  const goalEarn = Math.round((mine * COIN_PER_GOAL + COIN_FINISH) * mult);
+  // 比賽結果：贏 +100、輸 -100、平手不加不減
+  const resultBonus = win ? 100 : (draw ? 0 : -100);
+  const earned = goalEarn + resultBonus;
+  save.coins = Math.max(0, save.coins + earned);
   if (mine > save.best) save.best = mine;
   persist();
   try { localStorage.setItem('ls_penalty_best', String(save.best)); } catch (e) { /* 忽略 */ }
@@ -674,15 +678,19 @@ function finishMatch() {
 
   const d = DIFF[state.diff];
   const cur = PLAYERS.find((p) => p.id === save.current);
-  const title = win ? '🏆 你贏了！' : (mine === theirs ? '⚖️ 平手' : '😢 輸了…下次加油！');
+  const title = win ? '🏆 你贏了！' : (draw ? '⚖️ 平手' : '😢 輸了…下次加油！');
   const canBuy = PLAYERS.some((p) => !save.unlocked.includes(p.id) && p.price <= save.coins);
   const nextTarget = PLAYERS.find((p) => !save.unlocked.includes(p.id));
+  const resultLine = win ? '<span style="color:#7fe36a">贏球 +100 元</span>'
+    : draw ? '<span style="color:#ffe6b8">平手 ±0 元</span>'
+      : '<span style="color:#ff8a7a">輸球 -100 元</span>';
   el('pover-title').textContent = title;
   el('pover-score').innerHTML =
     `${cur.name} ${cur.num} 號 · ${d.icon} ${d.name}難度<br>` +
     `我方 <b>${mine}</b> : <b>${theirs}</b> 敵方<br>` +
     `<span class="best">最高紀錄：${save.best} 球</span>` +
-    `<br><span class="unlock">💰 這場賺了 ${earned} 元（共 ${save.coins} 元）${win ? ' · 贏球獎金 +300' : ''}</span>` +
+    `<br><span class="unlock">💰 進球獎金 ${goalEarn} 元 · ${resultLine}</span>` +
+    `<br><span class="unlock">這場 ${earned >= 0 ? '+' : ''}${earned} 元（共 ${save.coins} 元）</span>` +
     (canBuy
       ? '<br><span class="best">🛒 錢夠了！可以去買新的超級巨星</span>'
       : (nextTarget ? `<br><span class="best">再賺 ${nextTarget.price - save.coins} 元就能買 ${nextTarget.name}</span>` : '<br><span class="best">全部球星都買到了 ✨</span>'));
