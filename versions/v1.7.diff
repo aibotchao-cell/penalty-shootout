@@ -1,0 +1,280 @@
+# v1.6 → v1.7　守門員改成 Minecraft 方塊風（8x8 像素臉、方塊頭/身體/張開的雙手+橘手套，標準 MC 比例，NearestFilter 保留像素感）；新增 5 位超級巨星守門員一輪比一輪強：菜鳥阿明⭐→街頭阿豪⭐⭐→職業阿傑⭐⭐⭐→國家隊阿德⭐⭐⭐⭐→世界門神阿神⭐⭐⭐⭐⭐（各有不同球衣顏色與撲救率，普通難度 18%→29%→43%→55%→70%），每輪開踢訊息會顯示對手守門員與星級
+# 產生時間 2026-11-12 20:53
+
+diff --git a/VERSION b/VERSION
+index 810ee4e..d3bdbdf 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-1.6
++1.7
+diff --git a/index.html b/index.html
+index 22674f4..813476f 100644
+--- a/index.html
++++ b/index.html
+@@ -175,6 +175,7 @@
+ 
+     <button id="btn-play">開始踢球</button>
+     <p class="tip">每進一球賺 100 元 + 完成一輪 50 元（難度加倍）<br>比賽結果：贏 <b>+100</b> · 輸 <b>-100</b> · 平手 <b>±0</b></p>
++    <p class="tip">🧤 五輪守門員一輪比一輪強：菜鳥阿明 ⭐ → 街頭阿豪 ⭐⭐ → 職業阿傑 ⭐⭐⭐ → 國家隊阿德 ⭐⭐⭐⭐ → 世界門神阿神 ⭐⭐⭐⭐⭐</p>
+     <p class="tip">🖱 電腦：移動滑鼠瞄準、點一下射門　📱 iPad：拖曳瞄準、放開射門（或按右下「射門」）</p>
+     <p class="ver" id="ver-line">v1.0</p>
+   </div>
+diff --git a/js/penalty.js b/js/penalty.js
+index 1f9c26c..46da60c 100644
+--- a/js/penalty.js
++++ b/js/penalty.js
+@@ -153,55 +153,159 @@ for (let i = 0; i < TRAIL_N; i++) {
+ scene.add(trailGroup);
+ let trailQueue = [];
+ 
+-// ------------------------------ 人物 (方塊風) ------------------------------
++// ---------------------- Minecraft 風像素貼圖 -------------------------------
++const hex = (n) => '#' + (n >>> 0).toString(16).padStart(6, '0');
++
++function pxTexture(w, h, draw) {
++  const c = document.createElement('canvas');
++  c.width = w;
++  c.height = h;
++  const g2 = c.getContext('2d');
++  g2.imageSmoothingEnabled = false;
++  draw(g2, w, h);
++  const t = new THREE.CanvasTexture(c);
++  t.magFilter = THREE.NearestFilter;      // ★ 像素感（不做模糊）
++  t.minFilter = THREE.NearestFilter;
++  t.colorSpace = THREE.SRGBColorSpace;
++  return t;
++}
++
++// 六面材質：[+x, -x, +y, -y, +z(正面), -z]
++function mcMats(frontMap, sideColor, topColor, bottomColor) {
++  const f = new THREE.MeshLambertMaterial({ map: frontMap });
++  const s = new THREE.MeshLambertMaterial({ color: sideColor });
++  const t = new THREE.MeshLambertMaterial({ color: topColor ?? sideColor });
++  const b = new THREE.MeshLambertMaterial({ color: bottomColor ?? sideColor });
++  return [s, s, t, b, f, s];
++}
++
++// 8x8 像素臉（Minecraft 風格）
++function mcFace(skin, hair) {
++  return pxTexture(8, 8, (g2) => {
++    g2.fillStyle = hex(skin); g2.fillRect(0, 0, 8, 8);
++    g2.fillStyle = hex(hair); g2.fillRect(0, 0, 8, 2);
++    g2.fillStyle = '#f4f4f4'; g2.fillRect(1, 3, 2, 1); g2.fillRect(5, 3, 2, 1);
++    g2.fillStyle = '#22314d'; g2.fillRect(2, 3, 1, 1); g2.fillRect(5, 3, 1, 1);
++    g2.fillStyle = 'rgba(0,0,0,0.16)'; g2.fillRect(3, 4, 2, 1);
++    g2.fillStyle = 'rgba(90,40,30,0.75)'; g2.fillRect(3, 6, 2, 1);
++  });
++}
++
++// 8x12 球衣（領口＋胸前橫條）
++function mcJersey(kit, kit2) {
++  return pxTexture(8, 12, (g2) => {
++    g2.fillStyle = hex(kit); g2.fillRect(0, 0, 8, 12);
++    g2.fillStyle = hex(kit2); g2.fillRect(3, 0, 2, 2);
++    g2.fillStyle = hex(kit2); g2.fillRect(0, 4, 8, 2);
++    g2.fillStyle = 'rgba(0,0,0,0.12)'; g2.fillRect(0, 11, 8, 1);
++  });
++}
++
++// 4x12 手（袖子＋皮膚＋守門員手套）
++function mcArm(kit, skin, gloves) {
++  return pxTexture(4, 12, (g2) => {
++    g2.fillStyle = hex(kit); g2.fillRect(0, 0, 4, 4);
++    g2.fillStyle = hex(skin); g2.fillRect(0, 4, 4, 8);
++    if (gloves) { g2.fillStyle = '#ff8c1a'; g2.fillRect(0, 8, 4, 4); g2.fillStyle = '#e07b12'; g2.fillRect(0, 11, 4, 1); }
++  });
++}
++
++// 4x12 腿（短褲＋皮膚＋球鞋）
++function mcLeg(shorts, skin) {
++  return pxTexture(4, 12, (g2) => {
++    g2.fillStyle = hex(shorts); g2.fillRect(0, 0, 4, 5);
++    g2.fillStyle = hex(skin); g2.fillRect(0, 5, 4, 7);
++    g2.fillStyle = '#20202a'; g2.fillRect(0, 10, 4, 2);
++  });
++}
++
++// ------------------------------ 人物 (Minecraft 方塊風) ---------------------
++// 比例照 Minecraft：頭 8、身體 8x12x4、手腳 4x12x4（1 單位 ≈ 0.0563，身高約 1.8）
+ function makeFigure(o) {
+   const g = new THREE.Group();
+-  const kit = new THREE.MeshLambertMaterial({ color: o.kit });
+-  const kit2 = new THREE.MeshLambertMaterial({ color: o.kit2 });
+-  const shorts = new THREE.MeshLambertMaterial({ color: o.shorts });
+-  const skin = new THREE.MeshLambertMaterial({ color: o.skin });
+-  const hairM = new THREE.MeshLambertMaterial({ color: o.hair });
+-  const gloveMat = new THREE.MeshLambertMaterial({ color: 0xff8c1a });
+-
+-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.92, 0.44), kit);
+-  torso.position.y = 1.32; g.add(torso);
+-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.17, 0.46), kit2);
+-  stripe.position.y = 1.46; g.add(stripe);
+-  const sh = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.34, 0.46), shorts);
+-  sh.position.y = 0.8; g.add(sh);
+-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), skin);
+-  head.position.y = 2.02; g.add(head);
+-  const hair = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.44), hairM);
+-  hair.position.y = 2.2; g.add(hair);
+-  for (const sx of [-0.22, 0.22]) {
+-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.62, 0.28), skin);
+-    leg.position.set(sx, 0.37, 0); g.add(leg);
+-    const sock = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.3), kit);
+-    sock.position.set(sx, 0.13, 0); g.add(sock);
+-  }
++  const U = 0.0563;
++
++  // 頭 0.45 立方
++  const head = new THREE.Mesh(
++    new THREE.BoxGeometry(8 * U, 8 * U, 8 * U),
++    mcMats(mcFace(o.skin, o.hair), o.skin, o.hair, o.skin)
++  );
++  head.position.y = (12 + 12 + 4) * U;   // 腿 12 + 身體 12 + 頭一半 4 = 28
++  g.add(head);
++
++  // 身體 0.45 x 0.675 x 0.225
++  const torso = new THREE.Mesh(
++    new THREE.BoxGeometry(8 * U, 12 * U, 4 * U),
++    mcMats(mcJersey(o.kit, o.kit2), o.kit, o.kit2, o.shorts)
++  );
++  torso.position.y = 6 * U + 12 * U;   // 腳 12 + 身體一半 6
++  g.add(torso);
++
+   for (const sx of [-1, 1]) {
+-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.74, 0.22), o.gloves ? gloveMat : kit);
+-    arm.position.set(sx * 0.56, 1.36, 0);
+-    arm.rotation.z = sx * (o.gloves ? 0.62 : 0.18);
+-    g.add(arm);
+-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.24), o.gloves ? gloveMat : skin);
+-    hand.position.set(sx * (o.gloves ? 0.83 : 0.66), o.gloves ? 1.08 : 1.02, 0.02);
+-    g.add(hand);
++    // 手（肩膀當支點）
++    const armPivot = new THREE.Group();
++    armPivot.position.set(sx * 6 * U, 24 * U, 0);
++    const arm = new THREE.Mesh(
++      new THREE.BoxGeometry(4 * U, 12 * U, 4 * U),
++      mcMats(mcArm(o.kit, o.skin, o.gloves), o.kit, o.kit, o.skin)
++    );
++    arm.position.y = -6 * U;
++    armPivot.add(arm);
++    armPivot.rotation.z = sx * (o.gloves ? 0.95 : 0.07);   // 守門員張開手
++    g.add(armPivot);
++
++    // 腳（髖部當支點）
++    const legPivot = new THREE.Group();
++    legPivot.position.set(sx * 2 * U, 12 * U, 0);
++    const leg = new THREE.Mesh(
++      new THREE.BoxGeometry(4 * U, 12 * U, 4 * U),
++      mcMats(mcLeg(o.shorts, o.skin), o.shorts, o.shorts, o.skin)
++    );
++    leg.position.y = -6 * U;
++    legPivot.add(leg);
++    g.add(legPivot);
+   }
+   return g;
+ }
+ 
+ // 守門員
+-const keeperFigure = makeFigure({
+-  kit: 0x2f74d0, kit2: 0xffd24a, shorts: 0x1b2b46, hair: 0x1b2b46, skin: 0xe0a878, gloves: true,
+-});
+-keeperFigure.rotation.y = Math.PI / 2;          // 面向鏡頭
++// ---------------------- 5 位超級巨星守門員（一輪比一輪強）----------------------
++const KEEPERS = [
++  { name: '菜鳥阿明', stars: 1, kit: 0x2f74d0, kit2: 0xffd24a, shorts: 0x1b2b46, hair: 0x1b2b46, skin: 0xe0a878, reachMul: 0.80, errMul: 1.28 },
++  { name: '街頭阿豪', stars: 2, kit: 0x1f9d55, kit2: 0xffffff, shorts: 0x14532d, hair: 0x2a1a12, skin: 0xd9a06a, reachMul: 0.89, errMul: 1.12 },
++  { name: '職業阿傑', stars: 3, kit: 0x8e44ad, kit2: 0xffd24a, shorts: 0x2c0e3a, hair: 0x14100e, skin: 0xeab98f, reachMul: 1.00, errMul: 1.00 },
++  { name: '國家隊阿德', stars: 4, kit: 0xc0392b, kit2: 0xffffff, shorts: 0x2a1a12, hair: 0x5a3a1a, skin: 0xf3cda6, reachMul: 1.09, errMul: 0.90 },
++  { name: '世界門神阿神', stars: 5, kit: 0xffb300, kit2: 0x141414, shorts: 0x141414, hair: 0x1a1210, skin: 0x8a5a3b, reachMul: 1.18, errMul: 0.80 },
++];
++
+ const keeper = new THREE.Group();
+-keeper.add(keeperFigure);
+ const KEEPER_HOME = new THREE.Vector3(GOAL_X + 0.62, 1.0, GOAL_Z);
+ keeper.position.copy(KEEPER_HOME);
+-keeper.scale.setScalar(1.28);
++keeper.scale.setScalar(1.22);
+ scene.add(keeper);
++let curKeeper = KEEPERS[0];
++
++function setKeeper(idx) {
++  curKeeper = KEEPERS[Math.max(0, Math.min(idx, KEEPERS.length - 1))];
++  while (keeper.children.length) {
++    const c = keeper.children.pop();
++    keeper.remove(c);
++    c.traverse((n) => {
++      if (n.material) (Array.isArray(n.material) ? n.material : [n.material]).forEach((m) => m.dispose?.());
++      if (n.geometry) n.geometry.dispose?.();
++    });
++  }
++  const fig = makeFigure({
++    kit: curKeeper.kit, kit2: curKeeper.kit2, shorts: curKeeper.shorts,
++    hair: curKeeper.hair, skin: curKeeper.skin, gloves: true,
++  });
++  fig.rotation.y = Math.PI / 2;          // 面向鏡頭
++  keeper.add(fig);
++  keeper.position.copy(KEEPER_HOME);
++  keeper.rotation.set(0, 0, 0);
++}
++setKeeper(0);
++const keeperStars = () => '⭐'.repeat(curKeeper.stars);
+ 
+ // ---------------------- 敵隊 5 位射手 --------------------------------------
+ const RIVALS = [
+@@ -484,17 +588,17 @@ function shoot() {
+   const sp = SHOTS[pl.shot] || SHOTS.basic;
+   state.shotKey = pl.shot;
+ 
+-  // 守門員一定會有反應：往球的方向撲（判斷誤差＝難度 + 射門種類加成）
++  // 守門員一定會有反應：往球的方向撲（判斷誤差＝難度 × 這位守門員的強度）
+   // ★ 踢角落（貼近門柱或上方）時守門員更難搆到 → 更容易進
+   const extreme = Math.abs(state.aim.x - GOAL_Z) > 2.2 || state.aim.y > 3.3;
+   const extraErr = (extreme ? 0.6 : 0) + sp.extraErr;
+-  const ez = (Math.random() * 2 - 1) * (d.errZ + extraErr);
+-  const ey = (Math.random() * 2 - 1) * (d.errY + extraErr * 0.5);
++  const ez = (Math.random() * 2 - 1) * (d.errZ * curKeeper.errMul + extraErr);
++  const ey = (Math.random() * 2 - 1) * (d.errY * curKeeper.errMul + extraErr * 0.5);
+   const kbz = THREE.MathUtils.clamp(state.aim.x + ez, GOAL_Z_MIN - 0.4, GOAL_Z_MAX + 0.4);
+   const kby = THREE.MathUtils.clamp(state.aim.y + ey, 1.0, 3.6);
+   state.diveErr = Math.hypot(ez, ey);
+   state.keeperTo.set(KEEPER_HOME.x, Math.max(1.0, kby - 1.35), kbz);
+-  state.willSave = state.diveErr < d.reach * (0.9 + Math.random() * 0.2);
++  state.willSave = state.diveErr < d.reach * curKeeper.reachMul * (0.9 + Math.random() * 0.2);
+ 
+   state.ballFrom.copy(ball.position);
+   state.ballTo.set(AIM_X, state.aim.y, state.aim.x);
+@@ -609,7 +713,8 @@ function afterTheirTurn() {
+   }
+   state.phase = 'aim';
+   updateHud();
+-  if (!state.sudden) msg('換你踢！拖曳瞄準，放開射門');
++  setKeeper(state.round - 1);
++  if (!state.sudden) msg(`第 ${state.round} 輪 · 守門員：${curKeeper.name} ${keeperStars()}`);
+   refWhistle();
+ }
+ 
+@@ -726,8 +831,9 @@ function resetGame() {
+   camera.position.copy(CAM_SHOOT);
+   camera.lookAt(AIM_X, 1.85, GOAL_Z);
+   el('pover').classList.add('hidden');
++  setKeeper(0);
+   updateHud();
+-  msg('第 1 輪：你先踢！拖曳瞄準，放開射門');
++  msg(`第 1 輪 · 守門員：${curKeeper.name} ${keeperStars()}　（拖曳瞄準，放開射門）`);
+   refWhistle();
+ }
+ 
+@@ -849,4 +955,4 @@ updateHud();
+ frame();
+ 
+ // 除錯／測試用
+-window.__penalty = { state, ball, keeper, shoot, resetGame, DIFF, PLAYERS, save, persist, renderChars, applyPlayer, TOTAL_SHOTS };
++window.__penalty = { state, ball, keeper, shoot, resetGame, DIFF, PLAYERS, save, persist, renderChars, applyPlayer, TOTAL_SHOTS, SHOTS, KEEPERS, RIVALS, setKeeper };
+diff --git a/js/version.js b/js/version.js
+index f9ab5df..7749b49 100644
+--- a/js/version.js
++++ b/js/version.js
+@@ -1,2 +1,2 @@
+ // 遊戲版本（由 release.py 自動更新，勿手改）
+-export const VERSION = '1.6';
++export const VERSION = '1.7';
