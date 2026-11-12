@@ -207,6 +207,16 @@ export function saveGroan() {
   } catch (e) {}
 }
 
+// 🧑‍⚖️ 裁判哨聲（豌豆哨：高頻 + 快速抖動）
+export function refWhistle() {
+  if (!ctx) return;
+  const t0 = ctx.currentTime + 0.01;
+  try {
+    tone(t0, { type: 'sine', f0: 2750, f1: 2680, dur: 0.42, gain: 0.17, tremolo: 0.1, tremRate: 34, filter: { type: 'bandpass', freq: 2750, q: 1.7 } });
+    tone(t0, { type: 'square', f0: 3500, dur: 0.34, gain: 0.045, tremolo: 0.06, tremRate: 52 });
+  } catch (e) {}
+}
+
 // 🧤 撲救：身體撲出去時的「呼——」風聲
 export function diveWhoosh() {
   if (!ctx) return;

@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { World, buildCourt, buildMesh } from './world.js';
 import { ballTexture, logoTexture } from './logo.js';
-import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud } from './sfx.js';
+import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud, refWhistle } from './sfx.js';
 import { VERSION } from './version.js';
 
 const el = (id) => document.getElementById(id);
@@ -573,6 +573,7 @@ function beginTheirTurn() {
   const cornerBias = state.diff === 'hard' ? 0.85 : state.diff === 'normal' ? 0.6 : 0.35;
   state.theirZone = Math.random() < cornerBias ? (Math.random() < 0.5 ? 0 : 2) : 1;
   msg('🧤 換你當守門員！選一個方向撲', '');
+  refWhistle();
   updateHud();
 }
 
@@ -609,6 +610,7 @@ function afterTheirTurn() {
   state.phase = 'aim';
   updateHud();
   if (!state.sudden) msg('換你踢！拖曳瞄準，放開射門');
+  refWhistle();
 }
 
 // 敵方射門（球朝我飛過來）
@@ -718,6 +720,7 @@ function resetGame() {
   el('pover').classList.add('hidden');
   updateHud();
   msg('第 1 輪：你先踢！拖曳瞄準，放開射門');
+  refWhistle();
 }
 
 function goFullScreen() {

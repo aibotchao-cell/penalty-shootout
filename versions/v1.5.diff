@@ -1,0 +1,76 @@
+# v1.4 → v1.5　新增裁判哨聲（豌豆哨：高頻快速抖動）：每輪開踢前、換敵方射門前、比賽開始時都會響一聲哨
+# 產生時間 2026-11-12 20:33
+
+diff --git a/VERSION b/VERSION
+index c068b24..c239c60 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-1.4
++1.5
+diff --git a/js/penalty.js b/js/penalty.js
+index 7b3044e..4b56595 100644
+--- a/js/penalty.js
++++ b/js/penalty.js
+@@ -8,7 +8,7 @@
+ import * as THREE from 'three';
+ import { World, buildCourt, buildMesh } from './world.js';
+ import { ballTexture, logoTexture } from './logo.js';
+-import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud } from './sfx.js';
++import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud, refWhistle } from './sfx.js';
+ import { VERSION } from './version.js';
+ 
+ const el = (id) => document.getElementById(id);
+@@ -573,6 +573,7 @@ function beginTheirTurn() {
+   const cornerBias = state.diff === 'hard' ? 0.85 : state.diff === 'normal' ? 0.6 : 0.35;
+   state.theirZone = Math.random() < cornerBias ? (Math.random() < 0.5 ? 0 : 2) : 1;
+   msg('🧤 換你當守門員！選一個方向撲', '');
++  refWhistle();
+   updateHud();
+ }
+ 
+@@ -609,6 +610,7 @@ function afterTheirTurn() {
+   state.phase = 'aim';
+   updateHud();
+   if (!state.sudden) msg('換你踢！拖曳瞄準，放開射門');
++  refWhistle();
+ }
+ 
+ // 敵方射門（球朝我飛過來）
+@@ -718,6 +720,7 @@ function resetGame() {
+   el('pover').classList.add('hidden');
+   updateHud();
+   msg('第 1 輪：你先踢！拖曳瞄準，放開射門');
++  refWhistle();
+ }
+ 
+ function goFullScreen() {
+diff --git a/js/sfx.js b/js/sfx.js
+index 516d612..1904e63 100644
+--- a/js/sfx.js
++++ b/js/sfx.js
+@@ -207,6 +207,16 @@ export function saveGroan() {
+   } catch (e) {}
+ }
+ 
++// 🧑‍⚖️ 裁判哨聲（豌豆哨：高頻 + 快速抖動）
++export function refWhistle() {
++  if (!ctx) return;
++  const t0 = ctx.currentTime + 0.01;
++  try {
++    tone(t0, { type: 'sine', f0: 2750, f1: 2680, dur: 0.42, gain: 0.17, tremolo: 0.1, tremRate: 34, filter: { type: 'bandpass', freq: 2750, q: 1.7 } });
++    tone(t0, { type: 'square', f0: 3500, dur: 0.34, gain: 0.045, tremolo: 0.06, tremRate: 52 });
++  } catch (e) {}
++}
++
+ // 🧤 撲救：身體撲出去時的「呼——」風聲
+ export function diveWhoosh() {
+   if (!ctx) return;
+diff --git a/js/version.js b/js/version.js
+index b7b21c8..c7d2397 100644
+--- a/js/version.js
++++ b/js/version.js
+@@ -1,2 +1,2 @@
+ // 遊戲版本（由 release.py 自動更新，勿手改）
+-export const VERSION = '1.4';
++export const VERSION = '1.5';
