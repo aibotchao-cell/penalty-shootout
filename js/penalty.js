@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { World, buildCourt, buildMesh } from './world.js';
 import { ballTexture, logoTexture } from './logo.js';
-import { initAudio, kickSound, goalCheer, saveGroan } from './sfx.js';
+import { initAudio, kickSound, goalCheer, saveGroan, diveWhoosh, catchThud } from './sfx.js';
 import { VERSION } from './version.js';
 
 const el = (id) => document.getElementById(id);
@@ -230,22 +230,53 @@ function setRival(idx) {
   rival.position.set(11.8, 1.0, 18);
 }
 
-// 鏡頭：踢球視角 / 守門員視角（撲救時往旁邊倒）
+// 鏡頭：踢球視角 / 守門員視角（撲救時往旁邊衝、畫面傾斜、手套伸出去）
 const CAM_SHOOT = new THREE.Vector3(14.6, 2.15, GOAL_Z);
 const CAM_KEEP = new THREE.Vector3(6.6, 2.05, GOAL_Z);
 const _camTmp = new THREE.Vector3();
 const _lookTmp = new THREE.Vector3();
 
+// 守門員手套（掛在鏡頭前面，撲救時伸出去）
+const gloveMat = new THREE.MeshLambertMaterial({ color: 0xff8c1a });
+const gloveL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.26), gloveMat);
+const gloveR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.26), gloveMat);
+const GLOVE_HOME = { l: new THREE.Vector3(-0.78, -0.52, -1.15), r: new THREE.Vector3(0.78, -0.52, -1.15) };
+gloveL.position.copy(GLOVE_HOME.l);
+gloveR.position.copy(GLOVE_HOME.r);
+gloveL.visible = false;
+gloveR.visible = false;
+gloveL.renderOrder = 8;
+gloveR.renderOrder = 8;
+camera.add(gloveL);
+camera.add(gloveR);
+scene.add(camera);
+
+const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+
 function updateCamera(dt) {
   if (state.turn === 'their') {
-    let pz = CAM_KEEP.z;
-    if (state.diveZone === 0) pz = GOAL_Z - 2.0;
-    else if (state.diveZone === 2) pz = GOAL_Z + 2.0;
-    _camTmp.set(CAM_KEEP.x, CAM_KEEP.y, pz);
-    camera.position.lerp(_camTmp, Math.min(1, dt * 7));
-    _lookTmp.set(11.8, 1.9, GOAL_Z);
+    // 撲救動作進度
+    if (state.diveZone >= 0) state.diveAnim = Math.min(1, state.diveAnim + dt * 3.4);
+    const k = easeOut(state.diveAnim);
+    const dir = state.diveZone === 0 ? -1 : state.diveZone === 2 ? 1 : 0;
+    const targetZ = GOAL_Z + dir * 2.7 * k;
+    const targetY = CAM_KEEP.y - 0.75 * k;               // 撲出去會掉低
+    const targetX = CAM_KEEP.x + 1.1 * k;                // 身體往前撲
+    _camTmp.set(targetX, targetY, targetZ);
+    camera.position.lerp(_camTmp, Math.min(1, dt * 9));
+    _lookTmp.set(11.8, 1.9 - 0.5 * k, GOAL_Z);
     camera.lookAt(_lookTmp);
+    // 畫面傾斜（撲出去的方向）
+    if (dir) camera.rotateZ(-dir * 0.45 * k);
+
+    // 手套伸出去（小幅度，不要擋住視野）
+    gloveL.visible = true;
+    gloveR.visible = true;
+    gloveL.position.set(GLOVE_HOME.l.x + dir * 0.3 * k, GLOVE_HOME.l.y + 0.16 * k, GLOVE_HOME.l.z - 0.4 * k);
+    gloveR.position.set(GLOVE_HOME.r.x + dir * 0.3 * k, GLOVE_HOME.r.y + 0.16 * k, GLOVE_HOME.r.z - 0.4 * k);
   } else {
+    gloveL.visible = false;
+    gloveR.visible = false;
     camera.position.lerp(CAM_SHOOT, Math.min(1, dt * 5));
     _lookTmp.set(AIM_X, 1.85, GOAL_Z);
     camera.lookAt(_lookTmp);
@@ -296,6 +327,7 @@ const state = {
   willSave: false,
   diveErr: 99,
   diveZone: -1,              // 我當守門員時選的撲救方向 0左 1中 2右
+  diveAnim: 0,               // 撲救動作進度 0→1
   theirZone: 1,              // 敵方射門落在哪一格
   theirT: 0,
   theirResolved: false,
@@ -367,6 +399,8 @@ document.querySelectorAll('#p-dive .dbtn2').forEach((b) => {
     if (state.turn !== 'their') return;
     if (state.phase !== 'their' && state.phase !== 'theirFly' && state.phase !== 'theirResult') return;
     state.diveZone = Number(b.dataset.zone);
+    state.diveAnim = 0;
+    diveWhoosh();
     document.querySelectorAll('#p-dive .dbtn2').forEach((x) => x.classList.toggle('chosen', x === b));
     if (state.phase === 'their') msg('好！撲這裡…', '');
   });
@@ -520,6 +554,7 @@ function beginTheirTurn() {
   state.turn = 'their';
   state.phase = 'their';
   state.diveZone = -1;
+  state.diveAnim = 0;
   state.theirZone = 1;
   state.theirT = 0;
   state.theirResolved = false;
@@ -548,6 +583,8 @@ function nextShot() {
 
 function afterTheirTurn() {
   state.turn = 'our';
+  state.diveZone = -1;
+  state.diveAnim = 0;
   rival.visible = false;
   el('p-dive').classList.remove('show');
   el('btn-shoot').style.display = '';
@@ -597,6 +634,7 @@ function theirKick() {
 function resolveTheir() {
   if (state.willSave) {
     state.outcome = 'save';
+    catchThud();
     goalCheer();
     el('p-flash').className = 'goal';
     msg('🧤 撲到了！太棒了！', 'goal');
@@ -658,6 +696,7 @@ function resetGame() {
   state.goals = 0;
   state.theirGoals = 0;
   state.diveZone = -1;
+  state.diveAnim = 0;
   state.outcome = null;
   state.t = 0;
   state.kickT = 0;

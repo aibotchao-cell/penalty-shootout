@@ -206,3 +206,23 @@ export function saveGroan() {
     noise(t0, { dur: 0.5, gain: 0.06, type: 'lowpass', freq: 600 });
   } catch (e) {}
 }
+
+// 🧤 撲救：身體撲出去時的「呼——」風聲
+export function diveWhoosh() {
+  if (!ctx) return;
+  const t0 = ctx.currentTime + 0.01;
+  try {
+    noise(t0, { dur: 0.34, gain: 0.18, type: 'bandpass', freq: 500, q: 0.8, sweepTo: 2200 });
+    tone(t0, { type: 'sine', f0: 160, f1: 90, dur: 0.22, gain: 0.1 });
+  } catch (e) {}
+}
+
+// 🧤 撲到球：手套「啪」一聲
+export function catchThud() {
+  if (!ctx) return;
+  const t0 = ctx.currentTime + 0.01;
+  try {
+    tone(t0, { type: 'sine', f0: 190, f1: 70, dur: 0.16, gain: 0.3, filter: { freq: 700 } });
+    noise(t0, { dur: 0.12, gain: 0.22, type: 'lowpass', freq: 1400 });
+  } catch (e) {}
+}
